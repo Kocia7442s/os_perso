@@ -35,9 +35,12 @@ os_perso/
 │   ├── core/
 │   │   └── Database.php       # Connexion PDO MariaDB (Singleton)
 │   └── modules/
-│       ├── foyer/            # Module Foyer (liste de courses, générateur de menu IA)
-│       │   ├── router.php
-│       │   └── MenuGenerator.php
+│       ├── foyer/             # Module Foyer (menu IA, courses, placards, préférences)
+│       │   ├── router.php        # Sous-routeur (méthode + action)
+│       │   ├── MenuGenerator.php  # Génération du menu via Claude (cURL natif)
+│       │   ├── ShoppingList.php   # CRUD liste de courses
+│       │   ├── Pantry.php         # CRUD placards (inventory_pantry)
+│       │   └── Preferences.php    # Préférences du foyer
 │       ├── domotique/        # (à venir)
 │       ├── pro/              # (à venir)
 │       └── finances/         # (à venir)
@@ -46,10 +49,10 @@ os_perso/
     ├── index.html            # Coquille : Sidebar + zone <main>
     ├── assets/css/style.css  # Thème dark "monitoring" + grille Bento responsive
     ├── components/
-    │   └── bento-card.js      # Web Component <bento-card> (Shadow DOM)
+    │   └── bento-card.js      # Web Component <bento-card> (Shadow DOM, slot "actions")
     └── js/
-        ├── api.js            # Couche réseau (aucun DOM)
-        └── app.js            # Routeur SPA Vanilla + rendu des vues
+        ├── api.js            # Couche réseau (aucun DOM) — helpers apiGet/apiSend
+        └── app.js            # Routeur SPA Vanilla + rendu des vues + interactions
 ```
 
 ---
@@ -130,7 +133,7 @@ docker compose exec -T db sh -c 'exec mariadb -uos_user -pospassword os_perso' <
 docker compose down -v && docker compose up -d
 ```
 
-**Tables actuelles :** `shopping_items`, `inventory_pantry`, `meals_history`, `weekly_plan`.
+**Tables actuelles :** `shopping_items`, `inventory_pantry`, `meals_history`, `weekly_plan`, `user_preferences`.
 
 ---
 
@@ -143,9 +146,14 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 |---|---|---|
 | `GET` | `/backend/` | Test de vie de l'API |
 | `GET` | `/backend/test-db` | Test de connexion MariaDB (`SELECT 1`) |
-| `GET` | `/backend/foyer/stock` | Contenu des placards |
-| `GET` | `/backend/foyer/history` | Repas des 30 derniers jours |
-| `POST` | `/backend/foyer/generate-menu` | Génère un menu via l'IA, le persiste et déduit la liste de courses |
+| `POST` | `/backend/foyer/generate-menu` | Génère un menu via l'IA, le persiste, déduit la liste de courses |
+| `GET` | `/backend/foyer/menu` | Dernier menu persistant (sans rappeler l'IA) |
+| `GET` | `/backend/foyer/history` | Repas des 14 derniers jours |
+| `GET` · `POST` | `/backend/foyer/shopping` | Liste de courses : lire / ajouter |
+| `PUT` · `DELETE` | `/backend/foyer/shopping/{id}` | Cocher-décocher / supprimer un article |
+| `GET` · `POST` | `/backend/foyer/stock` | Placards : lire / ajouter |
+| `PUT` · `DELETE` | `/backend/foyer/stock/{id}` | Modifier (quantité, essentiel) / retirer |
+| `GET` · `POST` | `/backend/foyer/preferences` | Préférences du foyer : lire / enregistrer |
 
 **Ajouter un module** : créer `backend/modules/<nom>/router.php`, puis ajouter un
 `case '<nom>'` dans le `switch` de `backend/index.php`. Le `core` ne bouge pas.
@@ -165,7 +173,7 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 
 | Module | Statut | Contenu |
 |---|---|---|
-| **Foyer** | 🟢 En cours | Liste de courses, générateur de menu intelligent (IA) |
+| **Foyer** | 🟢 Fonctionnel | Générateur de menu IA, liste de courses (avec quantités), gestion des placards, préférences |
 | **Domotique** | ⚪ Prévu | Home Assistant, capteurs Zigbee, monitoring RPi |
 | **Pro & Freelance** | ⚪ Prévu | Facturation, suivi du CA, rappels Urssaf/CFE |
 | **Finances** | ⚪ Prévu | Suivi des dépenses, tracker d'investissements |

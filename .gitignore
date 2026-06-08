@@ -35,6 +35,9 @@ desktop.ini
 *.swo
 *~
 
+# --- Contexte personnel Claude (non versionné) ---
+CLAUDE.md
+
 # --- Divers ---
 *.bak
 *.tmp
