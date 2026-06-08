@@ -71,6 +71,37 @@ switch ("{$method} {$action}") {
         ]);
         break;
 
+    // ---- POST /backend/foyer/shopping : ajouter un article ----
+    case 'POST shopping':
+        $body = json_decode(file_get_contents('php://input'), true) ?? [];
+        $item = (new ShoppingList())->add((string) ($body['nom'] ?? ''));
+        if ($item === null) {
+            respond(400, ['status' => 'error', 'message' => "Nom d'article manquant."]);
+        }
+        respond(201, ['status' => 'success', 'data' => $item]);
+        break;
+
+    // ---- PUT /backend/foyer/shopping/{id} : cocher / décocher ----
+    case 'PUT shopping':
+        $id     = (int) ($segments[2] ?? 0);
+        $body   = json_decode(file_get_contents('php://input'), true) ?? [];
+        $achete = array_key_exists('achete', $body) ? (bool) $body['achete'] : null;
+        $item   = (new ShoppingList())->setStatus($id, $achete);
+        if ($item === null) {
+            respond(404, ['status' => 'error', 'message' => "Article #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'data' => $item]);
+        break;
+
+    // ---- DELETE /backend/foyer/shopping/{id} : supprimer ----
+    case 'DELETE shopping':
+        $id = (int) ($segments[2] ?? 0);
+        if (!(new ShoppingList())->delete($id)) {
+            respond(404, ['status' => 'error', 'message' => "Article #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'message' => 'Article supprimé.']);
+        break;
+
     // ---- GET /backend/foyer/preferences : lire les préférences du foyer ----
     case 'GET preferences':
         $prefs = new Preferences();

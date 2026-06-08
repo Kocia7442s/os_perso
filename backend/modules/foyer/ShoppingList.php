@@ -38,4 +38,63 @@ class ShoppingList
             ];
         }, $rows);
     }
+
+    /**
+     * Ajoute un article (à acheter).
+     * @return array|null L'article créé { id, nom, achete:false }, ou null si nom vide.
+     */
+    public function add(string $nom): ?array
+    {
+        $nom = trim($nom);
+        if ($nom === '') {
+            return null;
+        }
+        $this->db->query(
+            'INSERT INTO shopping_items (nom) VALUES (:nom)',
+            [':nom' => $nom]
+        );
+        $id = (int) $this->db->getConnection()->lastInsertId();
+
+        return ['id' => $id, 'nom' => $nom, 'achete' => false];
+    }
+
+    /**
+     * Modifie le statut d'achat d'un article.
+     * @param  int       $id
+     * @param  bool|null $achete true/false pour fixer la valeur ; null pour basculer.
+     * @return array|null L'article mis à jour, ou null s'il n'existe pas.
+     */
+    public function setStatus(int $id, ?bool $achete = null): ?array
+    {
+        $row = $this->db->query(
+            'SELECT id, nom, statut_achete FROM shopping_items WHERE id = :id',
+            [':id' => $id]
+        )->fetch();
+
+        if (!$row) {
+            return null;
+        }
+
+        $new = $achete === null ? !((bool) (int) $row['statut_achete']) : $achete;
+
+        $this->db->query(
+            'UPDATE shopping_items SET statut_achete = :s WHERE id = :id',
+            [':s' => $new ? 1 : 0, ':id' => $id]
+        );
+
+        return ['id' => $id, 'nom' => $row['nom'], 'achete' => $new];
+    }
+
+    /**
+     * Supprime un article.
+     * @return bool true si une ligne a bien été supprimée.
+     */
+    public function delete(int $id): bool
+    {
+        $stmt = $this->db->query(
+            'DELETE FROM shopping_items WHERE id = :id',
+            [':id' => $id]
+        );
+        return $stmt->rowCount() > 0;
+    }
 }

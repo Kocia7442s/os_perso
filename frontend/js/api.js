@@ -21,6 +21,29 @@ async function apiGet(path) {
 }
 
 /**
+ * Helper interne : envoi avec corps JSON (POST/PUT/DELETE) + vérif + parsing.
+ * @param {string} method 'POST' | 'PUT' | 'DELETE'
+ * @param {string} path   chemin relatif à l'API
+ * @param {Object} [body] corps optionnel (sérialisé en JSON)
+ */
+async function apiSend(method, path, body) {
+  const options = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body !== undefined) {
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch(`${API_BASE}${path}`, options);
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const err = await response.json();
+      detail = err.detail || err.message || detail;
+    } catch (_) { /* réponse non-JSON */ }
+    throw new Error(detail);
+  }
+  return response.json();
+}
+
+/**
  * Interroge la racine de l'API (test de vie).
  * @returns {Promise<Object>}
  */
@@ -78,6 +101,21 @@ export function getCurrentMenu() {
  */
 export function getShoppingList() {
   return apiGet('/foyer/shopping');
+}
+
+/** Ajoute un article à la liste de courses (POST /foyer/shopping). */
+export function addShoppingItem(nom) {
+  return apiSend('POST', '/foyer/shopping', { nom });
+}
+
+/** Coche/décoche un article (PUT /foyer/shopping/{id}). */
+export function setShoppingItemStatus(id, achete) {
+  return apiSend('PUT', `/foyer/shopping/${id}`, { achete });
+}
+
+/** Supprime un article (DELETE /foyer/shopping/{id}). */
+export function deleteShoppingItem(id) {
+  return apiSend('DELETE', `/foyer/shopping/${id}`);
 }
 
 /**

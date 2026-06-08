@@ -8,7 +8,8 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, getShoppingList,
+import { getSystemStatus, generateWeeklyMenu, getCurrentMenu,
+         getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem,
          getPreferences, savePreferences } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
@@ -141,8 +142,9 @@ function initFoyerView() {
 
   // Affiche d'emblée le dernier menu enregistré (sans rappeler l'IA).
   loadCurrentMenu();
-  // …et la liste de courses.
+  // …et la liste de courses, avec ses interactions.
   loadShoppingList();
+  initShoppingInteractions();
 }
 
 /** Charge et affiche la liste de courses dans sa carte. */
@@ -159,27 +161,86 @@ async function loadShoppingList() {
 }
 
 /**
- * Construit le HTML de la liste de courses.
+ * Construit le HTML de la liste de courses (interactive).
  * @param {Array} items [ { id, nom, achete }, ... ] (déjà triée côté backend)
  */
 function renderShoppingList(items) {
+  let html = '';
+
   if (!Array.isArray(items) || items.length === 0) {
-    return '<p class="muted">Liste de courses vide.</p>';
+    html += '<p class="muted">Liste de courses vide.</p>';
+  } else {
+    const toBuy = items.filter(i => !i.achete).length;
+    html += `<p class="shopping-count">${toBuy} article(s) à acheter</p>`;
+    html += '<ul class="shopping-list">';
+    items.forEach(item => {
+      const cls  = item.achete ? 'shopping-item bought' : 'shopping-item';
+      const mark = item.achete ? '☑' : '☐';
+      html += `<li class="${cls}" data-id="${item.id}">`
+            + `<button type="button" class="shopping-toggle" aria-label="Cocher / décocher">`
+            + `<span class="mark">${mark}</span>`
+            + `<span class="label">${escapeHtml(item.nom)}</span>`
+            + `</button>`
+            + `<button type="button" class="shopping-delete" aria-label="Supprimer" title="Supprimer">✕</button>`
+            + `</li>`;
+    });
+    html += '</ul>';
   }
 
-  const toBuy = items.filter(i => !i.achete).length;
-  let html = `<p class="shopping-count">${toBuy} article(s) à acheter</p>`;
-  html += '<ul class="shopping-list">';
-  items.forEach(item => {
-    const cls  = item.achete ? 'shopping-item bought' : 'shopping-item';
-    const mark = item.achete ? '☑' : '☐';
-    html += `<li class="${cls}">`
-          + `<span class="mark">${mark}</span>`
-          + `<span class="label">${escapeHtml(item.nom)}</span>`
-          + `</li>`;
-  });
-  html += '</ul>';
+  // Champ d'ajout (toujours présent, même si la liste est vide).
+  html += `
+    <form class="shopping-add" autocomplete="off">
+      <input type="text" name="nom" placeholder="Ajouter un article…" maxlength="255" required>
+      <button type="submit" class="btn-primary" aria-label="Ajouter">+</button>
+    </form>`;
+
   return html;
+}
+
+/**
+ * Câble les interactions de la liste de courses par DÉLÉGATION sur le conteneur
+ * (#shopping-result persiste pendant que son innerHTML est ré-rendu après chaque action).
+ */
+function initShoppingInteractions() {
+  const container = document.getElementById('shopping-result');
+  if (!container) return;
+
+  // Clics : cocher/décocher (bouton toggle) ou supprimer (croix).
+  container.addEventListener('click', async (e) => {
+    const li = e.target.closest('.shopping-item');
+    if (!li) return;
+    const id = Number(li.dataset.id);
+
+    try {
+      if (e.target.closest('.shopping-delete')) {
+        await deleteShoppingItem(id);
+        await loadShoppingList();
+      } else if (e.target.closest('.shopping-toggle')) {
+        const achete = !li.classList.contains('bought'); // état cible
+        await setShoppingItemStatus(id, achete);
+        await loadShoppingList();
+      }
+    } catch (err) {
+      console.error('Action liste de courses échouée :', err.message);
+    }
+  });
+
+  // Ajout d'un article.
+  container.addEventListener('submit', async (e) => {
+    if (!e.target.classList.contains('shopping-add')) return;
+    e.preventDefault();
+    const nom = e.target.nom.value.trim();
+    if (!nom) return;
+    try {
+      await addShoppingItem(nom);
+      await loadShoppingList();
+      // Re-focus sur le champ recréé, pour enchaîner les ajouts.
+      const input = container.querySelector('.shopping-add input');
+      if (input) input.focus();
+    } catch (err) {
+      console.error('Ajout article échoué :', err.message);
+    }
+  });
 }
 
 /** Charge et affiche le dernier menu persistant au chargement de la vue Foyer. */

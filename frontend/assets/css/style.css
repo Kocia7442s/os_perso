@@ -289,16 +289,58 @@ body {
   color: var(--text-muted);
   font-size: 0.82rem;
 }
-.shopping-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.shopping-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .shopping-item {
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 6px 8px;
+  gap: 4px;
   border-radius: 7px;
   font-size: 0.9rem;
 }
+/* Le toggle occupe toute la largeur cliquable (nom + case). */
+.shopping-toggle {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  padding: 6px 8px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+.shopping-toggle:hover { background: var(--bg); }
 .shopping-item .mark { color: var(--accent); font-size: 1rem; line-height: 1; }
 .shopping-item.bought { color: var(--text-muted); }
 .shopping-item.bought .mark { color: var(--ok); }
 .shopping-item.bought .label { text-decoration: line-through; }
+
+.shopping-delete {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 6px 9px;
+  border-radius: 7px;
+  opacity: 0.5;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+.shopping-delete:hover { opacity: 1; color: var(--danger); background: var(--bg); }
+
+.shopping-add { display: flex; gap: 8px; margin-top: 12px; }
+.shopping-add input {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.88rem;
+}
+.shopping-add input:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+.shopping-add .btn-primary { padding: 8px 14px; }
