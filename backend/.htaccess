@@ -1,0 +1,25 @@
+# =========================================================
+#  OS Perso — Routeur frontal de l'API
+#  Toutes les requêtes vers /backend/... sont redirigées vers
+#  index.php, qui joue le rôle de point d'entrée unique (front controller).
+# =========================================================
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # Le webroot Apache = racine du projet, et l'API vit dans /backend/.
+    # On fixe donc la base de réécriture à ce sous-dossier.
+    RewriteBase /backend/
+
+    # On NE réécrit PAS les fichiers ou dossiers qui existent réellement
+    # (ex : /backend/test.php continue d'être servi directement).
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # Tout le reste -> index.php?route=<chemin demandé>
+    #   /backend/test-db          => index.php?route=test-db
+    #   /backend/domotique/status => index.php?route=domotique/status
+    # [QSA] conserve une éventuelle query string existante (?id=5)
+    # [L]   stoppe le traitement des règles suivantes
+    RewriteRule ^(.*)$ index.php?route=$1 [QSA,L]
+</IfModule>
