@@ -33,6 +33,9 @@ services:
       DB_NAME: ${DB_NAME}
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
+      # Accès à l'IA, lu en PHP via getenv(). La clé reste hors du code (.env).
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
+      ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
 
   # ----------------------------------------------------------------
   # Base de données : MariaDB
