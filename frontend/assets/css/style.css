@@ -153,3 +153,55 @@ body {
 
   .main { padding: 18px 16px 84px; } /* marge basse pour la bottom bar */
 }
+
+/* =========================================================
+   MODULE FOYER — Générateur de menu
+   ========================================================= */
+.btn-primary {
+  display: inline-block;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #0f1117;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+}
+.btn-primary:hover:not(:disabled) { transform: translateY(-1px); }
+.btn-primary:disabled { opacity: 0.55; cursor: progress; }
+
+.menu-block { margin-top: 16px; }
+.menu-title {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.menu-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.menu-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.menu-day  { color: var(--text-muted); font-weight: 500; white-space: nowrap; }
+.menu-meal { color: var(--text); text-align: right; }
+
+.menu-notif {
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: rgba(81, 216, 138, 0.12); /* vert "ok" atténué */
+  border-left: 3px solid var(--ok);
+  color: var(--text);
+  font-size: 0.86rem;
+}

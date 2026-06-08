@@ -8,7 +8,7 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus } from './api.js';   // couche réseau
+import { getSystemStatus, generateWeeklyMenu } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -35,7 +35,12 @@ const VIEWS = {
   foyer: {
     title: 'Foyer',
     cards: [
-      { title: 'Liste de courses', icon: '🛒', span: 2,
+      { title: 'Menu de la Semaine', icon: '🍽️', span: 2, id: 'card-menu',
+        body: `
+          <button id="btn-generate-menu" class="btn-primary">Générer le menu (IA)</button>
+          <div id="menu-result"></div>
+        ` },
+      { title: 'Liste de courses', icon: '🛒',
         body: '<p class="muted">La table <code>shopping_items</code> existe déjà côté BDD.</p>' },
       { title: 'Calendrier commun', icon: '📅',
         body: '<p class="muted">À venir.</p>' },
@@ -93,8 +98,9 @@ function renderView(name) {
   // Met à jour l'état "actif" de la Sidebar
   setActiveNav(name);
 
-  // Hook post-rendu : remplir les cartes "live" (qui dépendent de l'API)
+  // Hook post-rendu : câbler / remplir les cartes interactives ou "live"
   if (name === 'dashboard') loadSystemStatus();
+  if (name === 'foyer')     initFoyerView();
 }
 
 // ---------------------------------------------------------------------------
@@ -116,6 +122,95 @@ async function loadSystemStatus() {
   } catch (err) {
     card.innerHTML = `<p class="error">⚠️ API injoignable : ${err.message}</p>`;
   }
+}
+
+// ---------------------------------------------------------------------------
+//  Module FOYER — génération et affichage du menu de la semaine
+// ---------------------------------------------------------------------------
+
+/** Câble le bouton de génération après le rendu de la vue Foyer. */
+function initFoyerView() {
+  const btn = document.getElementById('btn-generate-menu');
+  if (btn) btn.addEventListener('click', handleMenuGeneration);
+}
+
+/**
+ * Gère le clic "Générer le menu" : désactive le bouton pendant l'appel,
+ * affiche un état de chargement, puis injecte le résultat (ou l'erreur).
+ */
+async function handleMenuGeneration() {
+  const btn    = document.getElementById('btn-generate-menu');
+  const result = document.getElementById('menu-result');
+  if (!btn || !result) return;
+
+  // --- État "chargement" ---
+  const originalLabel = btn.textContent;
+  btn.disabled    = true;
+  btn.textContent = '⏳ Génération en cours…';
+  result.innerHTML = '<p class="muted">L\'IA compose ton menu, quelques secondes…</p>';
+
+  try {
+    const response = await generateWeeklyMenu();
+    result.innerHTML = renderMenu(response.data);
+  } catch (err) {
+    result.innerHTML = `<p class="error">❌ Échec de la génération : ${escapeHtml(err.message)}</p>`;
+  } finally {
+    // Toujours réactiver le bouton, succès comme échec.
+    btn.disabled    = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+/**
+ * Construit le HTML d'affichage du menu à partir des données du backend.
+ * @param {Object} data { jours_planifies, articles_ajoutes, menu: {semaine, liste_courses_deduite} }
+ */
+function renderMenu(data) {
+  if (!data || !data.menu || !Array.isArray(data.menu.semaine)) {
+    return '<p class="error">Réponse inattendue du serveur.</p>';
+  }
+
+  const WEEKEND = ['Samedi', 'Dimanche'];
+  const semaine = data.menu.semaine;
+  const enSemaine = semaine.filter(j => !WEEKEND.includes(j.jour));
+  const weekend   = semaine.filter(j =>  WEEKEND.includes(j.jour));
+
+  // --- Soirs de la semaine (Lundi -> Vendredi) ---
+  let html = '<div class="menu-block"><h3 class="menu-title">🌙 Soirs de la semaine</h3><ul class="menu-list">';
+  enSemaine.forEach(j => {
+    const soir = j.repas?.soir ?? '—';
+    html += `<li><span class="menu-day">${escapeHtml(j.jour)}</span>`
+          + `<span class="menu-meal">${escapeHtml(soir)}</span></li>`;
+  });
+  html += '</ul></div>';
+
+  // --- Week-end (midi + soir) ---
+  html += '<div class="menu-block"><h3 class="menu-title">🥐 Week-end</h3><ul class="menu-list">';
+  weekend.forEach(j => {
+    if (j.repas?.midi) {
+      html += `<li><span class="menu-day">${escapeHtml(j.jour)} midi</span>`
+            + `<span class="menu-meal">${escapeHtml(j.repas.midi)}</span></li>`;
+    }
+    if (j.repas?.soir) {
+      html += `<li><span class="menu-day">${escapeHtml(j.jour)} soir</span>`
+            + `<span class="menu-meal">${escapeHtml(j.repas.soir)}</span></li>`;
+    }
+  });
+  html += '</ul></div>';
+
+  // --- Notification liste de courses ---
+  const nb = data.articles_ajoutes ?? (data.menu.liste_courses_deduite?.length ?? 0);
+  html += `<p class="menu-notif">🛒 Liste de courses mise à jour : `
+        + `<strong>${nb}</strong> article(s) ajouté(s).</p>`;
+
+  return html;
+}
+
+/** Échappe le HTML — le contenu vient d'un LLM, on ne l'injecte jamais brut. */
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = String(str);
+  return div.innerHTML;
 }
 
 // ---------------------------------------------------------------------------

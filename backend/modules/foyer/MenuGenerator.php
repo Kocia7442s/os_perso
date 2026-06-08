@@ -36,13 +36,13 @@ class MenuGenerator
         )->fetchAll();
     }
 
-    /** Repas consommés sur les 30 derniers jours (pour éviter les répétitions). */
+    /** Repas consommés sur les 2 dernières semaines (pour éviter les répétitions). */
     public function getRecentHistory(): array
     {
         return $this->db->query(
             'SELECT id, meal_name, category, date_consumed
                FROM meals_history
-              WHERE date_consumed >= (CURRENT_DATE - INTERVAL 30 DAY)
+              WHERE date_consumed >= (CURRENT_DATE - INTERVAL 14 DAY)
               ORDER BY date_consumed DESC'
         )->fetchAll();
     }

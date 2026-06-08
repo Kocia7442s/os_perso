@@ -35,3 +35,30 @@ export function getApiInfo() {
 export function getSystemStatus() {
   return apiGet('/test-db');
 }
+
+/**
+ * Lance la génération du menu de la semaine (appel IA côté backend).
+ * POST /backend/foyer/generate-menu — peut prendre quelques secondes.
+ * @returns {Promise<Object>} ex : { status, message, data: { jours_planifies,
+ *                                   articles_ajoutes, menu: { semaine, liste_courses_deduite } } }
+ * @throws {Error} avec le message d'erreur du backend si la réponse n'est pas 2xx.
+ */
+export async function generateWeeklyMenu() {
+  const response = await fetch(`${API_BASE}/foyer/generate-menu`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+
+  if (!response.ok) {
+    // Le backend renvoie un JSON { status, message, detail } même en erreur :
+    // on essaie de remonter le message le plus parlant (ex : crédits API épuisés).
+    let detail = `HTTP ${response.status}`;
+    try {
+      const err = await response.json();
+      detail = err.detail || err.message || detail;
+    } catch (_) { /* réponse non-JSON : on garde le code HTTP */ }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}
