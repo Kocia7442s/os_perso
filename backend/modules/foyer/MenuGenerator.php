@@ -130,7 +130,14 @@ class MenuGenerator
             //    donc les doublons internes au même menu sont aussi évités.
             $courses = $menu['liste_courses_deduite'] ?? [];
             foreach ($courses as $article) {
-                $nom = is_string($article) ? trim($article) : '';
+                // Nouveau format : { ingredient, quantite }. On tolère l'ancien (string).
+                if (is_array($article)) {
+                    $nom      = trim((string) ($article['ingredient'] ?? ''));
+                    $quantite = trim((string) ($article['quantite'] ?? ''));
+                } else {
+                    $nom      = is_string($article) ? trim($article) : '';
+                    $quantite = '';
+                }
                 if ($nom === '') {
                     continue;
                 }
@@ -142,8 +149,8 @@ class MenuGenerator
                 )->fetch();
                 if (!$exists) {
                     $this->db->query(
-                        'INSERT INTO shopping_items (nom) VALUES (:nom)',
-                        [':nom' => $nom]
+                        'INSERT INTO shopping_items (nom, quantite) VALUES (:nom, :q)',
+                        [':nom' => $nom, ':q' => $quantite !== '' ? $quantite : null]
                     );
                 }
             }
@@ -232,8 +239,9 @@ class MenuGenerator
         $prompt .= "- N'utilise jamais le même ingrédient principal deux soirs de suite.\n";
         $prompt .= "- En semaine (le soir), privilégie des plats simples et rapides.\n";
         $prompt .= "- Le week-end, tu peux proposer des plats plus élaborés.\n";
-        $prompt .= "- Dans \"liste_courses_deduite\", ne mets QUE les ingrédients nécessaires "
-                 . "aux repas qui ne sont PAS déjà dans les placards ci-dessus.\n";
+        $prompt .= "- Dans \"liste_courses_deduite\", liste les ingrédients nécessaires aux "
+                 . "repas qui ne sont PAS déjà dans les placards, AVEC une quantité précise "
+                 . "pour chacun (ex : \"250 g\", \"1 kg\", \"2 boîtes\", \"3 pièces\").\n";
         if (!empty($prefs['avoid'])) {
             $prompt .= "- À ÉVITER ABSOLUMENT (allergies / interdits) : {$prefs['avoid']}.\n";
         }
@@ -261,7 +269,10 @@ class MenuGenerator
     {"jour": "Samedi",   "repas": {"midi": "...", "soir": "..."}},
     {"jour": "Dimanche", "repas": {"midi": "...", "soir": "..."}}
   ],
-  "liste_courses_deduite": ["Ingrédient 1", "Ingrédient 2"]
+  "liste_courses_deduite": [
+    {"ingredient": "Beurre", "quantite": "250 g"},
+    {"ingredient": "Tomates", "quantite": "1 kg"}
+  ]
 }
 JSON;
         $prompt .= "\nLe tableau \"semaine\" doit contenir les 7 jours, de Lundi à Dimanche, "

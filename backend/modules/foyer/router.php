@@ -73,8 +73,9 @@ switch ("{$method} {$action}") {
 
     // ---- POST /backend/foyer/shopping : ajouter un article ----
     case 'POST shopping':
-        $body = json_decode(file_get_contents('php://input'), true) ?? [];
-        $item = (new ShoppingList())->add((string) ($body['nom'] ?? ''));
+        $body     = json_decode(file_get_contents('php://input'), true) ?? [];
+        $quantite = isset($body['quantite']) ? (string) $body['quantite'] : null;
+        $item     = (new ShoppingList())->add((string) ($body['nom'] ?? ''), $quantite);
         if ($item === null) {
             respond(400, ['status' => 'error', 'message' => "Nom d'article manquant."]);
         }

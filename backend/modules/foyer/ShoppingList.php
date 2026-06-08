@@ -24,7 +24,7 @@ class ShoppingList
     public function getAll(): array
     {
         $rows = $this->db->query(
-            'SELECT id, nom, statut_achete
+            'SELECT id, nom, quantite, statut_achete
                FROM shopping_items
               ORDER BY statut_achete ASC, nom ASC'
         )->fetchAll();
@@ -32,30 +32,35 @@ class ShoppingList
         // Normalisation des types pour le front (PDO renvoie des chaînes).
         return array_map(static function (array $r): array {
             return [
-                'id'     => (int) $r['id'],
-                'nom'    => $r['nom'],
-                'achete' => (bool) (int) $r['statut_achete'],
+                'id'       => (int) $r['id'],
+                'nom'      => $r['nom'],
+                'quantite' => (string) ($r['quantite'] ?? ''),
+                'achete'   => (bool) (int) $r['statut_achete'],
             ];
         }, $rows);
     }
 
     /**
      * Ajoute un article (à acheter).
-     * @return array|null L'article créé { id, nom, achete:false }, ou null si nom vide.
+     * @param  string      $nom
+     * @param  string|null $quantite quantité libre ("250 g", "2 boîtes"…) ou null.
+     * @return array|null L'article créé { id, nom, quantite, achete:false }, ou null si nom vide.
      */
-    public function add(string $nom): ?array
+    public function add(string $nom, ?string $quantite = null): ?array
     {
         $nom = trim($nom);
         if ($nom === '') {
             return null;
         }
+        $quantite = $quantite !== null ? trim($quantite) : '';
+
         $this->db->query(
-            'INSERT INTO shopping_items (nom) VALUES (:nom)',
-            [':nom' => $nom]
+            'INSERT INTO shopping_items (nom, quantite) VALUES (:nom, :q)',
+            [':nom' => $nom, ':q' => $quantite !== '' ? $quantite : null]
         );
         $id = (int) $this->db->getConnection()->lastInsertId();
 
-        return ['id' => $id, 'nom' => $nom, 'achete' => false];
+        return ['id' => $id, 'nom' => $nom, 'quantite' => $quantite, 'achete' => false];
     }
 
     /**
@@ -67,7 +72,7 @@ class ShoppingList
     public function setStatus(int $id, ?bool $achete = null): ?array
     {
         $row = $this->db->query(
-            'SELECT id, nom, statut_achete FROM shopping_items WHERE id = :id',
+            'SELECT id, nom, quantite, statut_achete FROM shopping_items WHERE id = :id',
             [':id' => $id]
         )->fetch();
 
@@ -82,7 +87,12 @@ class ShoppingList
             [':s' => $new ? 1 : 0, ':id' => $id]
         );
 
-        return ['id' => $id, 'nom' => $row['nom'], 'achete' => $new];
+        return [
+            'id'       => $id,
+            'nom'      => $row['nom'],
+            'quantite' => (string) ($row['quantite'] ?? ''),
+            'achete'   => $new,
+        ];
     }
 
     /**

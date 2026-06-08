@@ -11,7 +11,8 @@
 CREATE TABLE IF NOT EXISTS shopping_items (
     id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     nom           VARCHAR(255) NOT NULL,
-    statut_achete TINYINT(1)   NOT NULL DEFAULT 0,   -- 0 = à acheter, 1 = acheté
+    quantite      VARCHAR(50)  DEFAULT NULL,          -- ex : "250 g", "2 boîtes" (libre)
+    statut_achete TINYINT(1)   NOT NULL DEFAULT 0,    -- 0 = à acheter, 1 = acheté
     date_ajout    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

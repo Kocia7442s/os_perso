@@ -176,10 +176,13 @@ function renderShoppingList(items) {
     items.forEach(item => {
       const cls  = item.achete ? 'shopping-item bought' : 'shopping-item';
       const mark = item.achete ? '☑' : '☐';
+      const qty  = item.quantite
+        ? `<span class="qty">${escapeHtml(item.quantite)}</span>` : '';
       html += `<li class="${cls}" data-id="${item.id}">`
             + `<button type="button" class="shopping-toggle" aria-label="Cocher / décocher">`
             + `<span class="mark">${mark}</span>`
             + `<span class="label">${escapeHtml(item.nom)}</span>`
+            + qty
             + `</button>`
             + `<button type="button" class="shopping-delete" aria-label="Supprimer" title="Supprimer">✕</button>`
             + `</li>`;
@@ -191,6 +194,7 @@ function renderShoppingList(items) {
   html += `
     <form class="shopping-add" autocomplete="off">
       <input type="text" name="nom" placeholder="Ajouter un article…" maxlength="255" required>
+      <input type="text" name="quantite" placeholder="Qté" maxlength="50" class="qty-input">
       <button type="submit" class="btn-primary" aria-label="Ajouter">+</button>
     </form>`;
 
@@ -229,10 +233,11 @@ function initShoppingInteractions() {
   container.addEventListener('submit', async (e) => {
     if (!e.target.classList.contains('shopping-add')) return;
     e.preventDefault();
-    const nom = e.target.nom.value.trim();
+    const nom      = e.target.nom.value.trim();
+    const quantite = e.target.quantite.value.trim();
     if (!nom) return;
     try {
-      await addShoppingItem(nom);
+      await addShoppingItem(nom, quantite);
       await loadShoppingList();
       // Re-focus sur le champ recréé, pour enchaîner les ajouts.
       const input = container.querySelector('.shopping-add input');
