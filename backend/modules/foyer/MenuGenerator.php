@@ -192,6 +192,33 @@ JSON;
      */
     public function callLLM(string $prompt): string
     {
+        // ====================================================================
+        //  ⚠️ MODE MOCK TEMPORAIRE — pas de crédits API Anthropic pour l'instant.
+        //  On simule l'appel IA : une petite latence réseau + un faux JSON
+        //  parfaitement conforme à la règle des 9 repas. Permet de tester toute
+        //  l'interface "à vide".
+        //  👉 À RETIRER (supprimer ce bloc return) une fois le compte crédité,
+        //     pour réactiver l'appel cURL réel conservé juste en dessous.
+        // ====================================================================
+        sleep(2); // simule le temps de réflexion de l'IA
+        return <<<JSON
+{
+  "semaine": [
+    {"jour": "Lundi", "repas": {"soir": "Gratin de pâtes à la sauce tomate"}},
+    {"jour": "Mardi", "repas": {"soir": "Riz sauté aux oignons et œufs"}},
+    {"jour": "Mercredi", "repas": {"soir": "Omelette au fromage"}},
+    {"jour": "Jeudi", "repas": {"soir": "Pâtes au pesto maison"}},
+    {"jour": "Vendredi", "repas": {"soir": "Riz cantonais"}},
+    {"jour": "Samedi", "repas": {"midi": "Salade composée", "soir": "Pizza maison"}},
+    {"jour": "Dimanche", "repas": {"midi": "Poulet rôti et frites", "soir": "Soupe de légumes"}}
+  ],
+  "liste_courses_deduite": ["Salade", "Pesto", "Pâte à pizza", "Poulet", "Pommes de terre", "Légumes pour soupe"]
+}
+JSON;
+
+        // --------------------------------------------------------------------
+        //  CODE RÉEL (inactif tant que le bloc MOCK ci-dessus fait un return).
+        // --------------------------------------------------------------------
         // 1. Identifiants lus dans l'environnement (injectés par Docker).
         $apiKey = getenv('ANTHROPIC_API_KEY');
         if (!$apiKey || $apiKey === 'sk-ant-REMPLACE_MOI') {
