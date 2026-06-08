@@ -280,3 +280,25 @@ body {
 .btn-ghost:hover { color: var(--text); border-color: var(--text-muted); }
 
 .dialog-error { color: var(--danger); font-size: 0.84rem; margin: 12px 0 0; }
+
+/* =========================================================
+   LISTE DE COURSES
+   ========================================================= */
+.shopping-count {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+.shopping-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.shopping-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 8px;
+  border-radius: 7px;
+  font-size: 0.9rem;
+}
+.shopping-item .mark { color: var(--accent); font-size: 1rem; line-height: 1; }
+.shopping-item.bought { color: var(--text-muted); }
+.shopping-item.bought .mark { color: var(--ok); }
+.shopping-item.bought .label { text-decoration: line-through; }

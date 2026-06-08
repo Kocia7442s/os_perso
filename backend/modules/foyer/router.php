@@ -13,6 +13,7 @@
 
 require_once __DIR__ . '/MenuGenerator.php';
 require_once __DIR__ . '/Preferences.php';
+require_once __DIR__ . '/ShoppingList.php';
 
 // 2e segment d'URL = l'action ciblée : /backend/foyer/<action>
 $action = $segments[1] ?? '';
@@ -58,6 +59,15 @@ switch ("{$method} {$action}") {
         respond(200, [
             'status' => 'success',
             'data'   => ['menu' => $generator->getCurrentPlan()],
+        ]);
+        break;
+
+    // ---- GET /backend/foyer/shopping : liste de courses ----
+    case 'GET shopping':
+        $list = new ShoppingList();
+        respond(200, [
+            'status' => 'success',
+            'data'   => $list->getAll(),
         ]);
         break;
 

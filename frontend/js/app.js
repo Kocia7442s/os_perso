@@ -8,7 +8,7 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus, generateWeeklyMenu, getCurrentMenu,
+import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, getShoppingList,
          getPreferences, savePreferences } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
@@ -43,8 +43,8 @@ const VIEWS = {
           <button id="btn-generate-menu" class="btn-primary">Générer le menu (IA)</button>
           <div id="menu-result"></div>
         ` },
-      { title: 'Liste de courses', icon: '🛒',
-        body: '<p class="muted">La table <code>shopping_items</code> existe déjà côté BDD.</p>' },
+      { title: 'Liste de courses', icon: '🛒', id: 'card-shopping',
+        body: '<div id="shopping-result"><p class="muted">Chargement…</p></div>' },
       { title: 'Calendrier commun', icon: '📅',
         body: '<p class="muted">À venir.</p>' },
     ],
@@ -141,6 +141,45 @@ function initFoyerView() {
 
   // Affiche d'emblée le dernier menu enregistré (sans rappeler l'IA).
   loadCurrentMenu();
+  // …et la liste de courses.
+  loadShoppingList();
+}
+
+/** Charge et affiche la liste de courses dans sa carte. */
+async function loadShoppingList() {
+  const result = document.getElementById('shopping-result');
+  if (!result) return;
+
+  try {
+    const { data } = await getShoppingList();
+    result.innerHTML = renderShoppingList(data ?? []);
+  } catch (err) {
+    result.innerHTML = `<p class="error">Liste indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/**
+ * Construit le HTML de la liste de courses.
+ * @param {Array} items [ { id, nom, achete }, ... ] (déjà triée côté backend)
+ */
+function renderShoppingList(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return '<p class="muted">Liste de courses vide.</p>';
+  }
+
+  const toBuy = items.filter(i => !i.achete).length;
+  let html = `<p class="shopping-count">${toBuy} article(s) à acheter</p>`;
+  html += '<ul class="shopping-list">';
+  items.forEach(item => {
+    const cls  = item.achete ? 'shopping-item bought' : 'shopping-item';
+    const mark = item.achete ? '☑' : '☐';
+    html += `<li class="${cls}">`
+          + `<span class="mark">${mark}</span>`
+          + `<span class="label">${escapeHtml(item.nom)}</span>`
+          + `</li>`;
+  });
+  html += '</ul>';
+  return html;
 }
 
 /** Charge et affiche le dernier menu persistant au chargement de la vue Foyer. */

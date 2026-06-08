@@ -73,6 +73,14 @@ export function getCurrentMenu() {
 }
 
 /**
+ * Récupère la liste de courses (GET /backend/foyer/shopping).
+ * @returns {Promise<Object>} { status, data: [ { id, nom, achete }, ... ] }
+ */
+export function getShoppingList() {
+  return apiGet('/foyer/shopping');
+}
+
+/**
  * Récupère les préférences du foyer (GET /backend/foyer/preferences).
  * @returns {Promise<Object>} { status, data: { household_size, veggie_meals, max_pasta, avoid } }
  */
