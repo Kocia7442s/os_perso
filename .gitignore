@@ -1,0 +1,40 @@
+# =========================================================
+#  OS Perso — .gitignore
+# =========================================================
+
+# --- Secrets / environnement (CRITIQUE) ---
+# On ne commite JAMAIS le .env réel. Seul .env.example est versionné.
+.env
+.env.local
+*.env
+!.env.example
+
+# --- Dépendances ---
+/node_modules/
+/vendor/
+
+# --- Logs & dumps ---
+*.log
+logs/
+*.sql.gz
+*.dump
+
+# --- Données / volumes locaux éventuels ---
+/data/
+/docker/database/data/
+
+# --- Fichiers système OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Éditeurs / IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- Divers ---
+*.bak
+*.tmp
