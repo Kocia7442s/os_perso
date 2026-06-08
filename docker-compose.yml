@@ -56,6 +56,9 @@ services:
     volumes:
       # Volume nommé : les données de la BDD survivent à un "docker compose down".
       - db_data:/var/lib/mysql
+      # Scripts d'init joués au PREMIER démarrage (volume vide uniquement).
+      # En lecture seule (:ro) — MariaDB ne fait que les exécuter.
+      - ./docker/database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
 
 # Déclaration du volume persistant pour MariaDB
 volumes:

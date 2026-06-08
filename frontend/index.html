@@ -3,47 +3,45 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>OS Perso — Test du Ping</title>
-  <style>
-    /* Styles minimalistes juste pour ce test.
-       Le vrai design "Bento Box" viendra plus tard. */
-    body {
-      font-family: system-ui, -apple-system, sans-serif;
-      max-width: 640px;
-      margin: 2rem auto;
-      padding: 0 1rem;
-      line-height: 1.5;
-    }
-    h1 { font-size: 1.3rem; }
-    pre {
-      background: #1e1e2e;
-      color: #cdd6f4;
-      padding: 1rem;
-      border-radius: 8px;
-      overflow: auto;
-      border-left: 4px solid #585b70;
-    }
-    pre.success { border-left-color: #a6e3a1; } /* vert  */
-    pre.error   { border-left-color: #f38ba8; } /* rouge */
-    button {
-      margin-top: 1rem;
-      padding: .5rem 1rem;
-      border: 0;
-      border-radius: 6px;
-      background: #89b4fa;
-      cursor: pointer;
-      font-size: 1rem;
-    }
-  </style>
+  <title>OS Perso — Dashboard</title>
+  <link rel="stylesheet" href="assets/css/style.css">
+  <!-- Point d'entrée UNIQUE : app.js importe lui-même le composant + l'API. -->
+  <script type="module" src="js/app.js"></script>
 </head>
 <body>
-  <h1>🛰️ OS Perso — Test de communication Front ↔ Back</h1>
-  <p>Résultat du <code>fetch()</code> vers <code>/backend/test.php</code> :</p>
+  <div class="app-shell">
 
-  <pre id="output">Initialisation…</pre>
-  <button id="retry">Relancer le test</button>
+    <!-- ============ Sidebar (Bottom Bar sur mobile) ============ -->
+    <aside class="sidebar">
+      <div class="brand">
+        <span class="logo">🧠</span>
+        <span>OS Perso</span>
+      </div>
 
-  <!-- type="module" => active les imports ES6 natifs (notre approche Vanilla). -->
-  <script type="module" src="js/app.js"></script>
+      <nav class="nav">
+        <!-- data-view = identifiant de la vue, lu par le routeur (app.js). -->
+        <a href="#dashboard" class="nav-item" data-view="dashboard">
+          <span class="ico">▦</span><span class="label">Dashboard</span>
+        </a>
+        <a href="#foyer" class="nav-item" data-view="foyer">
+          <span class="ico">🏡</span><span class="label">Foyer</span>
+        </a>
+        <a href="#domotique" class="nav-item" data-view="domotique">
+          <span class="ico">💡</span><span class="label">Domotique</span>
+        </a>
+        <a href="#pro" class="nav-item" data-view="pro">
+          <span class="ico">💼</span><span class="label">Pro</span>
+        </a>
+        <a href="#finances" class="nav-item" data-view="finances">
+          <span class="ico">💶</span><span class="label">Finances</span>
+        </a>
+      </nav>
+    </aside>
+
+    <!-- ============ Zone centrale : la Bento Box ============ -->
+    <!-- Le routeur (app.js) injecte ici les <bento-card> de la vue active. -->
+    <main id="main" class="main"></main>
+
+  </div>
 </body>
 </html>
