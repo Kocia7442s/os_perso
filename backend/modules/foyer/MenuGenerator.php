@@ -122,14 +122,52 @@ class MenuGenerator
 
     private function buildPrompt(array $stock, array $history): string
     {
-        $ingredients = implode(', ', array_column($stock, 'item_name'));
-        $recents     = implode(', ', array_column($history, 'meal_name'));
-
-        $prompt  = "Génère un menu pour la semaine.\n";
-        $prompt .= "Privilégie ces ingrédients déjà en stock : {$ingredients}.\n";
-        if ($recents !== '') {
-            $prompt .= "Évite de répéter ces repas récents : {$recents}.\n";
+        // --- Stock détaillé : nom + quantité + marqueur "essentiel" ---
+        $stockLines = [];
+        foreach ($stock as $item) {
+            $line = '- ' . $item['item_name'];
+            if (!empty($item['quantity'])) {
+                $line .= ' (' . $item['quantity'] . ')';
+            }
+            if (!empty($item['is_essential'])) {
+                $line .= ' [essentiel — à toujours avoir en stock]';
+            }
+            $stockLines[] = $line;
         }
+        $stockText = $stockLines ? implode("\n", $stockLines) : '(placards vides)';
+
+        // --- Historique : nom + catégorie (pour équilibrer) ---
+        $histLines = [];
+        foreach ($history as $h) {
+            $label = $h['meal_name'];
+            if (!empty($h['category'])) {
+                $label .= ' (' . $h['category'] . ')';
+            }
+            $histLines[] = $label;
+        }
+        $recents = implode(', ', $histLines);
+
+        $prompt  = "Génère un menu de la semaine pour un foyer (un couple).\n\n";
+        $prompt .= "INGRÉDIENTS DISPONIBLES DANS LES PLACARDS "
+                 . "(à utiliser EN PRIORITÉ pour limiter les achats ; "
+                 . "la quantité disponible est entre parenthèses) :\n";
+        $prompt .= $stockText . "\n";
+
+        if ($recents !== '') {
+            $prompt .= "\nREPAS DÉJÀ CONSOMMÉS CES 2 DERNIÈRES SEMAINES "
+                     . "(à NE PAS répéter ; la catégorie est entre parenthèses) :\n";
+            $prompt .= $recents . "\n";
+        }
+
+        // --- Règles d'équilibre et de variété ---
+        $prompt .= "\nRÈGLES D'ÉQUILIBRE ET DE VARIÉTÉ :\n";
+        $prompt .= "- Varie les catégories : maximum 2 repas à base de pâtes sur la semaine.\n";
+        $prompt .= "- Inclus au moins 2 repas végétariens.\n";
+        $prompt .= "- N'utilise jamais le même ingrédient principal deux soirs de suite.\n";
+        $prompt .= "- En semaine (le soir), privilégie des plats simples et rapides.\n";
+        $prompt .= "- Le week-end, tu peux proposer des plats plus élaborés.\n";
+        $prompt .= "- Dans \"liste_courses_deduite\", ne mets QUE les ingrédients nécessaires "
+                 . "aux repas qui ne sont PAS déjà dans les placards ci-dessus.\n";
 
         // --- RÈGLE MÉTIER (contrainte forte) ---
         $prompt .= "\nRÈGLE IMPÉRATIVE — je ne déjeune PAS chez moi en semaine :\n";
@@ -192,33 +230,6 @@ JSON;
      */
     public function callLLM(string $prompt): string
     {
-        // ====================================================================
-        //  ⚠️ MODE MOCK TEMPORAIRE — pas de crédits API Anthropic pour l'instant.
-        //  On simule l'appel IA : une petite latence réseau + un faux JSON
-        //  parfaitement conforme à la règle des 9 repas. Permet de tester toute
-        //  l'interface "à vide".
-        //  👉 À RETIRER (supprimer ce bloc return) une fois le compte crédité,
-        //     pour réactiver l'appel cURL réel conservé juste en dessous.
-        // ====================================================================
-        sleep(2); // simule le temps de réflexion de l'IA
-        return <<<JSON
-{
-  "semaine": [
-    {"jour": "Lundi", "repas": {"soir": "Gratin de pâtes à la sauce tomate"}},
-    {"jour": "Mardi", "repas": {"soir": "Riz sauté aux oignons et œufs"}},
-    {"jour": "Mercredi", "repas": {"soir": "Omelette au fromage"}},
-    {"jour": "Jeudi", "repas": {"soir": "Pâtes au pesto maison"}},
-    {"jour": "Vendredi", "repas": {"soir": "Riz cantonais"}},
-    {"jour": "Samedi", "repas": {"midi": "Salade composée", "soir": "Pizza maison"}},
-    {"jour": "Dimanche", "repas": {"midi": "Poulet rôti et frites", "soir": "Soupe de légumes"}}
-  ],
-  "liste_courses_deduite": ["Salade", "Pesto", "Pâte à pizza", "Poulet", "Pommes de terre", "Légumes pour soupe"]
-}
-JSON;
-
-        // --------------------------------------------------------------------
-        //  CODE RÉEL (inactif tant que le bloc MOCK ci-dessus fait un return).
-        // --------------------------------------------------------------------
         // 1. Identifiants lus dans l'environnement (injectés par Docker).
         $apiKey = getenv('ANTHROPIC_API_KEY');
         if (!$apiKey || $apiKey === 'sk-ant-REMPLACE_MOI') {
@@ -232,9 +243,12 @@ JSON;
             'model'      => $model,
             'max_tokens' => 2048,
             // Le rôle "system" renforce la contrainte de sortie JSON pure.
-            'system'     => 'Tu es un assistant de planification de repas. Tu réponds '
-                          . 'UNIQUEMENT avec un objet JSON brut valide, sans texte autour '
-                          . 'et sans bloc de code markdown.',
+            'system'     => 'Tu es un chef cuisinier pragmatique qui planifie les repas '
+                          . 'd\'un foyer : tu varies les plats, équilibres les apports '
+                          . '(protéines, légumes, féculents), limites le gaspillage en '
+                          . 'utilisant d\'abord les ingrédients déjà en stock, et proposes '
+                          . 'des recettes simples en semaine. Tu réponds UNIQUEMENT avec un '
+                          . 'objet JSON brut valide, sans texte autour et sans bloc de code markdown.',
             'messages'   => [
                 ['role' => 'user', 'content' => $prompt],
             ],
