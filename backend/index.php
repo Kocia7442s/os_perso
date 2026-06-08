@@ -77,14 +77,16 @@ try {
             ]);
             break;
 
-        // ---- Emplacements prévus pour les futurs modules ----
-        // Pour ajouter un module, on délègue à son propre fichier :
-        //
+        // ---- Module FOYER : /backend/foyer/... ----
+        // On délègue tout le sous-routage au routeur dédié du module.
+        // Il a accès à $segments (l'URL découpée) et à respond() définis ici.
+        case 'foyer':
+            require __DIR__ . '/modules/foyer/router.php';
+            break;
+
+        // ---- Autres modules à venir (à décommenter le moment venu) ----
         // case 'domotique':
         //     require __DIR__ . '/modules/domotique/router.php';
-        //     break;
-        // case 'foyer':
-        //     require __DIR__ . '/modules/foyer/router.php';
         //     break;
         // case 'pro':
         //     require __DIR__ . '/modules/pro/router.php';
