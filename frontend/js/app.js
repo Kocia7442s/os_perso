@@ -285,6 +285,9 @@ async function handleMenuGeneration() {
   try {
     const response = await generateWeeklyMenu();
     result.innerHTML = renderMenu(response.data);
+    // La génération a aussi mis à jour la liste de courses en base :
+    // on rafraîchit sa carte pour voir les ingrédients déduits sans recharger la page.
+    await loadShoppingList();
   } catch (err) {
     result.innerHTML = `<p class="error">❌ Échec de la génération : ${escapeHtml(err.message)}</p>`;
   } finally {
