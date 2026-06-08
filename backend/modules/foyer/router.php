@@ -48,8 +48,16 @@ switch ("{$method} {$action}") {
         $result = $generator->generateMenu();
         respond(200, [
             'status'  => 'success',
-            'message' => 'Squelette de génération opérationnel (logique IA à brancher).',
+            'message' => 'Menu de la semaine généré et enregistré.',
             'data'    => $result,
+        ]);
+        break;
+
+    // ---- GET /backend/foyer/menu : dernier menu persistant (sans régénérer) ----
+    case 'GET menu':
+        respond(200, [
+            'status' => 'success',
+            'data'   => ['menu' => $generator->getCurrentPlan()],
         ]);
         break;
 

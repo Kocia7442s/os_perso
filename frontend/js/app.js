@@ -8,7 +8,7 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus, generateWeeklyMenu,
+import { getSystemStatus, generateWeeklyMenu, getCurrentMenu,
          getPreferences, savePreferences } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
@@ -138,6 +138,28 @@ function initFoyerView() {
 
   const settingsBtn = document.getElementById('btn-menu-settings');
   if (settingsBtn) settingsBtn.addEventListener('click', openPrefsDialog);
+
+  // Affiche d'emblée le dernier menu enregistré (sans rappeler l'IA).
+  loadCurrentMenu();
+}
+
+/** Charge et affiche le dernier menu persistant au chargement de la vue Foyer. */
+async function loadCurrentMenu() {
+  const result = document.getElementById('menu-result');
+  if (!result) return;
+
+  try {
+    const { data } = await getCurrentMenu();
+    const semaine = data?.menu?.semaine ?? [];
+    if (!semaine.length) {
+      result.innerHTML = '<p class="muted">Aucun menu pour l\'instant — clique sur « Générer le menu ».</p>';
+      return;
+    }
+    // On masque la notif "liste de courses" : pertinente uniquement après une génération.
+    result.innerHTML = renderMenu(data, { showShoppingNotif: false });
+  } catch (_) {
+    result.innerHTML = ''; // chargement silencieux : pas d'erreur bloquante à l'arrivée
+  }
 }
 
 /**
@@ -171,7 +193,7 @@ async function handleMenuGeneration() {
  * Construit le HTML d'affichage du menu à partir des données du backend.
  * @param {Object} data { jours_planifies, articles_ajoutes, menu: {semaine, liste_courses_deduite} }
  */
-function renderMenu(data) {
+function renderMenu(data, { showShoppingNotif = true } = {}) {
   if (!data || !data.menu || !Array.isArray(data.menu.semaine)) {
     return '<p class="error">Réponse inattendue du serveur.</p>';
   }
@@ -204,10 +226,12 @@ function renderMenu(data) {
   });
   html += '</ul></div>';
 
-  // --- Notification liste de courses ---
-  const nb = data.articles_ajoutes ?? (data.menu.liste_courses_deduite?.length ?? 0);
-  html += `<p class="menu-notif">🛒 Liste de courses mise à jour : `
-        + `<strong>${nb}</strong> article(s) ajouté(s).</p>`;
+  // --- Notification liste de courses (uniquement juste après une génération) ---
+  if (showShoppingNotif) {
+    const nb = data.articles_ajoutes ?? (data.menu.liste_courses_deduite?.length ?? 0);
+    html += `<p class="menu-notif">🛒 Liste de courses mise à jour : `
+          + `<strong>${nb}</strong> article(s) ajouté(s).</p>`;
+  }
 
   return html;
 }

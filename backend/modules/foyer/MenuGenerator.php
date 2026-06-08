@@ -52,6 +52,32 @@ class MenuGenerator
         )->fetchAll();
     }
 
+    /**
+     * Reconstruit le plan de la semaine actuellement en base, au format attendu
+     * par le front : { semaine: [ {jour, repas: {midi?, soir?}}, ... ] }.
+     * Renvoie une semaine vide si aucun menu n'a encore été généré.
+     */
+    public function getCurrentPlan(): array
+    {
+        $rows = $this->db->query(
+            'SELECT day_of_week, meal_type, meal_name
+               FROM weekly_plan
+              ORDER BY id ASC'
+        )->fetchAll();
+
+        // Regroupe par jour en conservant l'ordre d'insertion (= ordre des jours).
+        $byDay = [];
+        foreach ($rows as $r) {
+            $d = $r['day_of_week'];
+            if (!isset($byDay[$d])) {
+                $byDay[$d] = ['jour' => $d, 'repas' => []];
+            }
+            $byDay[$d]['repas'][$r['meal_type']] = $r['meal_name'];
+        }
+
+        return ['semaine' => array_values($byDay)];
+    }
+
     // ---------------------------------------------------------------------
     //  Orchestration : génération complète du menu
     // ---------------------------------------------------------------------
@@ -105,6 +131,23 @@ class MenuGenerator
                         'INSERT INTO shopping_items (nom) VALUES (:nom)',
                         [':nom' => trim($article)]
                     );
+                }
+            }
+
+            // c) Archive les repas du menu dans l'historique : c'est ce qui rend
+            //    l'anti-répétition réelle pour les prochaines générations.
+            //    (date_consumed = aujourd'hui ; category laissée à NULL pour l'instant.)
+            foreach ($menu['semaine'] as $jour) {
+                $repas = $jour['repas'] ?? [];
+                foreach (['midi', 'soir'] as $type) {
+                    $nom = $repas[$type] ?? '';
+                    if (is_string($nom) && trim($nom) !== '') {
+                        $this->db->query(
+                            'INSERT INTO meals_history (meal_name, date_consumed)
+                             VALUES (:nom, CURRENT_DATE)',
+                            [':nom' => trim($nom)]
+                        );
+                    }
                 }
             }
 

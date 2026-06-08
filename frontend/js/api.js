@@ -64,6 +64,15 @@ export async function generateWeeklyMenu() {
 }
 
 /**
+ * Récupère le dernier menu persistant en base (GET /backend/foyer/menu),
+ * sans relancer l'IA.
+ * @returns {Promise<Object>} { status, data: { menu: { semaine } } }
+ */
+export function getCurrentMenu() {
+  return apiGet('/foyer/menu');
+}
+
+/**
  * Récupère les préférences du foyer (GET /backend/foyer/preferences).
  * @returns {Promise<Object>} { status, data: { household_size, veggie_meals, max_pasta, avoid } }
  */
