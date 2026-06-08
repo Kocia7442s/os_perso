@@ -124,12 +124,26 @@ class MenuGenerator
             }
 
             // b) Liste de courses déduite -> table shopping_items (colonne nom).
+            //    Anti-doublon : on n'ajoute un ingrédient que s'il n'est pas déjà
+            //    présent dans la liste "à acheter" (statut_achete = 0). Comme on est
+            //    dans la même transaction, un ajout est visible par le SELECT suivant,
+            //    donc les doublons internes au même menu sont aussi évités.
             $courses = $menu['liste_courses_deduite'] ?? [];
             foreach ($courses as $article) {
-                if (is_string($article) && trim($article) !== '') {
+                $nom = is_string($article) ? trim($article) : '';
+                if ($nom === '') {
+                    continue;
+                }
+                $exists = $this->db->query(
+                    'SELECT 1 FROM shopping_items
+                      WHERE nom = :nom AND statut_achete = 0
+                      LIMIT 1',
+                    [':nom' => $nom]
+                )->fetch();
+                if (!$exists) {
                     $this->db->query(
                         'INSERT INTO shopping_items (nom) VALUES (:nom)',
-                        [':nom' => trim($article)]
+                        [':nom' => $nom]
                     );
                 }
             }
