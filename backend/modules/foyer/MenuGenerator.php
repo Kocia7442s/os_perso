@@ -125,23 +125,40 @@ class MenuGenerator
         $ingredients = implode(', ', array_column($stock, 'item_name'));
         $recents     = implode(', ', array_column($history, 'meal_name'));
 
-        $prompt  = "Génère un menu pour la semaine (7 jours, midi et soir).\n";
+        $prompt  = "Génère un menu pour la semaine.\n";
         $prompt .= "Privilégie ces ingrédients déjà en stock : {$ingredients}.\n";
         if ($recents !== '') {
             $prompt .= "Évite de répéter ces repas récents : {$recents}.\n";
         }
+
+        // --- RÈGLE MÉTIER (contrainte forte) ---
+        $prompt .= "\nRÈGLE IMPÉRATIVE — je ne déjeune PAS chez moi en semaine :\n";
+        $prompt .= "- Du LUNDI au VENDREDI : génère UNIQUEMENT le repas du \"soir\" "
+                 . "(la clé \"midi\" ne doit PAS apparaître ces jours-là).\n";
+        $prompt .= "- Le SAMEDI et le DIMANCHE : génère le \"midi\" ET le \"soir\".\n";
+        $prompt .= "Soit 9 repas au total (5 soirs en semaine + 2 midis + 2 soirs le week-end), "
+                 . "et surtout PAS 14.\n";
+
         $prompt .= "\nRéponds STRICTEMENT avec un unique objet JSON valide : "
                  . "aucun texte avant ou après, AUCUN bloc de code markdown (pas de ```). "
-                 . "Respecte EXACTEMENT ce schéma :\n";
+                 . "Respecte EXACTEMENT ce schéma (note bien la structure différente "
+                 . "entre la semaine et le week-end) :\n";
         $prompt .= <<<JSON
 {
   "semaine": [
-    {"jour": "Lundi", "repas": {"midi": "...", "soir": "..."}}
+    {"jour": "Lundi",    "repas": {"soir": "..."}},
+    {"jour": "Mardi",    "repas": {"soir": "..."}},
+    {"jour": "Mercredi", "repas": {"soir": "..."}},
+    {"jour": "Jeudi",    "repas": {"soir": "..."}},
+    {"jour": "Vendredi", "repas": {"soir": "..."}},
+    {"jour": "Samedi",   "repas": {"midi": "...", "soir": "..."}},
+    {"jour": "Dimanche", "repas": {"midi": "...", "soir": "..."}}
   ],
   "liste_courses_deduite": ["Ingrédient 1", "Ingrédient 2"]
 }
 JSON;
-        $prompt .= "\nLe tableau \"semaine\" doit contenir les 7 jours, de Lundi à Dimanche.";
+        $prompt .= "\nLe tableau \"semaine\" doit contenir les 7 jours, de Lundi à Dimanche, "
+                 . "en respectant exactement cette répartition des repas.";
 
         return $prompt;
     }
