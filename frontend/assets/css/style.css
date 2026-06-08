@@ -205,3 +205,78 @@ body {
   color: var(--text);
   font-size: 0.86rem;
 }
+
+/* =========================================================
+   BOUTON D'ACTION (slot "actions" des <bento-card>) + MODALE
+   ========================================================= */
+.card-action {
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 3px 5px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+.card-action:hover { background: var(--card-border); transform: rotate(30deg); }
+
+/* --- Modale native <dialog> --- */
+.app-dialog {
+  width: min(420px, 92vw);
+  border: 1px solid var(--card-border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  padding: 22px;
+}
+.app-dialog::backdrop { background: rgba(0, 0, 0, 0.55); }
+
+.dialog-title { margin: 0 0 18px; font-size: 1.05rem; font-weight: 700; }
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  margin-bottom: 14px;
+  font-size: 0.86rem;
+}
+.field > span { color: var(--text-muted); }
+
+.app-dialog input,
+.app-dialog textarea {
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+.app-dialog input:focus,
+.app-dialog textarea:focus {
+  outline: 2px solid var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  padding: 9px 16px;
+  border-radius: 9px;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--text-muted); }
+
+.dialog-error { color: var(--danger); font-size: 0.84rem; margin: 12px 0 0; }

@@ -60,7 +60,9 @@ class BentoCard extends HTMLElement {
           transition: border-color 0.15s, transform 0.15s;
         }
         .card:hover { border-color: var(--accent, #6c8cff); transform: translateY(-2px); }
-        header { display: flex; align-items: center; gap: 10px; }
+        header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+        .head-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .head-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
         .icon { font-size: 1.2rem; line-height: 1; }
         h2 {
           margin: 0;
@@ -77,8 +79,12 @@ class BentoCard extends HTMLElement {
       </style>
       <article class="card">
         <header>
-          ${icon ? `<span class="icon">${icon}</span>` : ''}
-          <h2>${title}</h2>
+          <div class="head-left">
+            ${icon ? `<span class="icon">${icon}</span>` : ''}
+            <h2>${title}</h2>
+          </div>
+          <!-- Slot d'action réutilisable (ex : bouton ⚙️) projeté à droite de l'en-tête. -->
+          <div class="head-actions"><slot name="actions"></slot></div>
         </header>
         <div class="body"><slot></slot></div>
       </article>

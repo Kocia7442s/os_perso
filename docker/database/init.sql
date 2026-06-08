@@ -63,3 +63,19 @@ INSERT INTO inventory_pantry (item_name, quantity, is_essential) VALUES
     ('Riz',          '1 kg',     1),
     ('Sauce tomate', '2 boîtes', 0),
     ('Œufs',         '6',        1);
+
+-- Préférences du foyer pour le générateur de menu (table à ligne unique).
+-- Injectées dans le prompt par MenuGenerator::buildPrompt().
+CREATE TABLE IF NOT EXISTS user_preferences (
+    id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    household_size TINYINT UNSIGNED NOT NULL DEFAULT 2,   -- nb de personnes
+    veggie_meals   TINYINT UNSIGNED NOT NULL DEFAULT 2,   -- repas végétariens / semaine (minimum)
+    max_pasta      TINYINT UNSIGNED NOT NULL DEFAULT 2,   -- repas à base de pâtes / semaine (maximum)
+    avoid          VARCHAR(500) DEFAULT NULL,             -- à éviter / allergies (texte libre)
+    updated_at     TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Ligne unique (id=1) avec les valeurs par défaut.
+INSERT INTO user_preferences (id, household_size, veggie_meals, max_pasta, avoid)
+VALUES (1, 2, 2, 2, NULL);

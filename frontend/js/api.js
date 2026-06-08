@@ -62,3 +62,36 @@ export async function generateWeeklyMenu() {
 
   return response.json();
 }
+
+/**
+ * Récupère les préférences du foyer (GET /backend/foyer/preferences).
+ * @returns {Promise<Object>} { status, data: { household_size, veggie_meals, max_pasta, avoid } }
+ */
+export function getPreferences() {
+  return apiGet('/foyer/preferences');
+}
+
+/**
+ * Enregistre les préférences du foyer (POST /backend/foyer/preferences).
+ * @param {Object} prefs { household_size, veggie_meals, max_pasta, avoid }
+ * @returns {Promise<Object>} les préférences finales (bornées) renvoyées par le backend.
+ * @throws {Error} avec le message du backend si la réponse n'est pas 2xx.
+ */
+export async function savePreferences(prefs) {
+  const response = await fetch(`${API_BASE}/foyer/preferences`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(prefs),
+  });
+
+  if (!response.ok) {
+    let detail = `HTTP ${response.status}`;
+    try {
+      const err = await response.json();
+      detail = err.detail || err.message || detail;
+    } catch (_) { /* réponse non-JSON */ }
+    throw new Error(detail);
+  }
+
+  return response.json();
+}

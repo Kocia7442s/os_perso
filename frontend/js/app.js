@@ -8,7 +8,8 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus, generateWeeklyMenu } from './api.js';   // couche réseau
+import { getSystemStatus, generateWeeklyMenu,
+         getPreferences, savePreferences } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -37,6 +38,8 @@ const VIEWS = {
     cards: [
       { title: 'Menu de la Semaine', icon: '🍽️', span: 2, id: 'card-menu',
         body: `
+          <button class="card-action" slot="actions" id="btn-menu-settings"
+                  title="Réglages du menu" aria-label="Réglages du menu">⚙️</button>
           <button id="btn-generate-menu" class="btn-primary">Générer le menu (IA)</button>
           <div id="menu-result"></div>
         ` },
@@ -128,10 +131,13 @@ async function loadSystemStatus() {
 //  Module FOYER — génération et affichage du menu de la semaine
 // ---------------------------------------------------------------------------
 
-/** Câble le bouton de génération après le rendu de la vue Foyer. */
+/** Câble les boutons interactifs après le rendu de la vue Foyer. */
 function initFoyerView() {
   const btn = document.getElementById('btn-generate-menu');
   if (btn) btn.addEventListener('click', handleMenuGeneration);
+
+  const settingsBtn = document.getElementById('btn-menu-settings');
+  if (settingsBtn) settingsBtn.addEventListener('click', openPrefsDialog);
 }
 
 /**
@@ -211,6 +217,110 @@ function escapeHtml(str) {
   const div = document.createElement('div');
   div.textContent = String(str);
   return div.innerHTML;
+}
+
+// ---------------------------------------------------------------------------
+//  Réglages du menu — <dialog> natif (préférences du foyer)
+// ---------------------------------------------------------------------------
+
+/**
+ * Crée le <dialog> de réglages une seule fois (puis le réutilise) et câble
+ * ses boutons. Renvoie l'élément <dialog>.
+ */
+function ensurePrefsDialog() {
+  let dialog = document.getElementById('prefs-dialog');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'prefs-dialog';
+  dialog.className = 'app-dialog';
+  dialog.innerHTML = `
+    <form id="prefs-form" method="dialog">
+      <h2 class="dialog-title">⚙️ Réglages du menu</h2>
+
+      <label class="field">
+        <span>Nombre de personnes</span>
+        <input type="number" name="household_size" min="1" max="20" required>
+      </label>
+      <label class="field">
+        <span>Repas végétariens / semaine (minimum)</span>
+        <input type="number" name="veggie_meals" min="0" max="9" required>
+      </label>
+      <label class="field">
+        <span>Repas à base de pâtes / semaine (maximum)</span>
+        <input type="number" name="max_pasta" min="0" max="9" required>
+      </label>
+      <label class="field">
+        <span>À éviter / allergies</span>
+        <textarea name="avoid" rows="2" maxlength="500"
+                  placeholder="ex : champignons, fruits de mer"></textarea>
+      </label>
+
+      <p class="dialog-error" id="prefs-error" hidden></p>
+
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="prefs-cancel">Annuler</button>
+        <button type="submit" class="btn-primary" id="prefs-save">Enregistrer</button>
+      </div>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+
+  // Annuler : on ferme sans rien sauvegarder.
+  dialog.querySelector('#prefs-cancel')
+        .addEventListener('click', () => dialog.close());
+
+  // Enregistrer : on sauvegarde via l'API, puis on ferme.
+  dialog.querySelector('#prefs-form').addEventListener('submit', async (e) => {
+    e.preventDefault(); // on gère la sauvegarde nous-mêmes (sinon le dialog fermerait avant)
+    const form     = e.target;
+    const saveBtn  = form.querySelector('#prefs-save');
+    const errorEl  = form.querySelector('#prefs-error');
+
+    errorEl.hidden  = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Enregistrement…';
+
+    try {
+      await savePreferences({
+        household_size: Number(form.household_size.value),
+        veggie_meals:   Number(form.veggie_meals.value),
+        max_pasta:      Number(form.max_pasta.value),
+        avoid:          form.avoid.value.trim(),
+      });
+      dialog.close();
+    } catch (err) {
+      errorEl.textContent = `Échec de l'enregistrement : ${err.message}`;
+      errorEl.hidden = false;
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Enregistrer';
+    }
+  });
+
+  return dialog;
+}
+
+/** Ouvre la modale de réglages, pré-remplie avec les préférences actuelles. */
+async function openPrefsDialog() {
+  const dialog = ensurePrefsDialog();
+  const form   = dialog.querySelector('#prefs-form');
+
+  // Pré-remplissage depuis le backend (valeurs par défaut si l'appel échoue).
+  try {
+    const { data = {} } = await getPreferences();
+    form.household_size.value = data.household_size ?? 2;
+    form.veggie_meals.value   = data.veggie_meals   ?? 2;
+    form.max_pasta.value      = data.max_pasta      ?? 2;
+    form.avoid.value          = data.avoid          ?? '';
+  } catch (_) {
+    form.household_size.value = 2;
+    form.veggie_meals.value   = 2;
+    form.max_pasta.value      = 2;
+    form.avoid.value          = '';
+  }
+
+  dialog.showModal();
 }
 
 // ---------------------------------------------------------------------------

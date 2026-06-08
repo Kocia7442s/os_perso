@@ -12,6 +12,7 @@
  */
 
 require_once __DIR__ . '/MenuGenerator.php';
+require_once __DIR__ . '/Preferences.php';
 
 // 2e segment d'URL = l'action ciblée : /backend/foyer/<action>
 $action = $segments[1] ?? '';
@@ -49,6 +50,26 @@ switch ("{$method} {$action}") {
             'status'  => 'success',
             'message' => 'Squelette de génération opérationnel (logique IA à brancher).',
             'data'    => $result,
+        ]);
+        break;
+
+    // ---- GET /backend/foyer/preferences : lire les préférences du foyer ----
+    case 'GET preferences':
+        $prefs = new Preferences();
+        respond(200, [
+            'status' => 'success',
+            'data'   => $prefs->get(),
+        ]);
+        break;
+
+    // ---- POST /backend/foyer/preferences : enregistrer les préférences ----
+    case 'POST preferences':
+        $body  = json_decode(file_get_contents('php://input'), true) ?? [];
+        $prefs = new Preferences();
+        respond(200, [
+            'status'  => 'success',
+            'message' => 'Préférences enregistrées.',
+            'data'    => $prefs->save($body),
         ]);
         break;
 

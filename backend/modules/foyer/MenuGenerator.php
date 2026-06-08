@@ -8,18 +8,23 @@
  */
 
 require_once __DIR__ . '/../../core/Database.php';
+require_once __DIR__ . '/Preferences.php';
 
 class MenuGenerator
 {
     /** @var Database Singleton de connexion (jamais une 2e connexion PDO). */
     private Database $db;
 
+    /** @var Preferences Préférences du foyer (injectées dans le prompt). */
+    private Preferences $prefs;
+
     /** Endpoint de l'API Messages d'Anthropic. */
     private const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 
     public function __construct()
     {
-        $this->db = Database::getInstance();
+        $this->db    = Database::getInstance();
+        $this->prefs = new Preferences();
     }
 
     // ---------------------------------------------------------------------
@@ -122,6 +127,9 @@ class MenuGenerator
 
     private function buildPrompt(array $stock, array $history): string
     {
+        // Préférences du foyer (configurables via /backend/foyer/preferences).
+        $prefs = $this->prefs->get();
+
         // --- Stock détaillé : nom + quantité + marqueur "essentiel" ---
         $stockLines = [];
         foreach ($stock as $item) {
@@ -147,7 +155,8 @@ class MenuGenerator
         }
         $recents = implode(', ', $histLines);
 
-        $prompt  = "Génère un menu de la semaine pour un foyer (un couple).\n\n";
+        $prompt  = "Génère un menu de la semaine pour un foyer de "
+                 . "{$prefs['household_size']} personne(s).\n\n";
         $prompt .= "INGRÉDIENTS DISPONIBLES DANS LES PLACARDS "
                  . "(à utiliser EN PRIORITÉ pour limiter les achats ; "
                  . "la quantité disponible est entre parenthèses) :\n";
@@ -161,13 +170,16 @@ class MenuGenerator
 
         // --- Règles d'équilibre et de variété ---
         $prompt .= "\nRÈGLES D'ÉQUILIBRE ET DE VARIÉTÉ :\n";
-        $prompt .= "- Varie les catégories : maximum 2 repas à base de pâtes sur la semaine.\n";
-        $prompt .= "- Inclus au moins 2 repas végétariens.\n";
+        $prompt .= "- Varie les catégories : maximum {$prefs['max_pasta']} repas à base de pâtes sur la semaine.\n";
+        $prompt .= "- Inclus au moins {$prefs['veggie_meals']} repas végétariens.\n";
         $prompt .= "- N'utilise jamais le même ingrédient principal deux soirs de suite.\n";
         $prompt .= "- En semaine (le soir), privilégie des plats simples et rapides.\n";
         $prompt .= "- Le week-end, tu peux proposer des plats plus élaborés.\n";
         $prompt .= "- Dans \"liste_courses_deduite\", ne mets QUE les ingrédients nécessaires "
                  . "aux repas qui ne sont PAS déjà dans les placards ci-dessus.\n";
+        if (!empty($prefs['avoid'])) {
+            $prompt .= "- À ÉVITER ABSOLUMENT (allergies / interdits) : {$prefs['avoid']}.\n";
+        }
 
         // --- RÈGLE MÉTIER (contrainte forte) ---
         $prompt .= "\nRÈGLE IMPÉRATIVE — je ne déjeune PAS chez moi en semaine :\n";
