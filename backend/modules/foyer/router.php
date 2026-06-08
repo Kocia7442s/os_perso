@@ -14,6 +14,7 @@
 require_once __DIR__ . '/MenuGenerator.php';
 require_once __DIR__ . '/Preferences.php';
 require_once __DIR__ . '/ShoppingList.php';
+require_once __DIR__ . '/Pantry.php';
 
 // 2e segment d'URL = l'action ciblée : /backend/foyer/<action>
 $action = $segments[1] ?? '';
@@ -26,12 +27,46 @@ switch ("{$method} {$action}") {
 
     // ---- GET /backend/foyer/stock : contenu des placards ----
     case 'GET stock':
-        $stock = $generator->getAvailableStock();
+        $stock = (new Pantry())->getAll();
         respond(200, [
             'status' => 'success',
             'count'  => count($stock),
             'data'   => $stock,
         ]);
+        break;
+
+    // ---- POST /backend/foyer/stock : ajouter un ingrédient ----
+    case 'POST stock':
+        $body = json_decode(file_get_contents('php://input'), true) ?? [];
+        $item = (new Pantry())->add(
+            (string) ($body['item_name'] ?? ''),
+            isset($body['quantity']) ? (string) $body['quantity'] : null,
+            !empty($body['is_essential'])
+        );
+        if ($item === null) {
+            respond(400, ['status' => 'error', 'message' => "Nom d'ingrédient manquant."]);
+        }
+        respond(201, ['status' => 'success', 'data' => $item]);
+        break;
+
+    // ---- PUT /backend/foyer/stock/{id} : modifier (quantité, essentiel, nom) ----
+    case 'PUT stock':
+        $id   = (int) ($segments[2] ?? 0);
+        $body = json_decode(file_get_contents('php://input'), true) ?? [];
+        $item = (new Pantry())->update($id, $body);
+        if ($item === null) {
+            respond(404, ['status' => 'error', 'message' => "Ingrédient #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'data' => $item]);
+        break;
+
+    // ---- DELETE /backend/foyer/stock/{id} : retirer un ingrédient ----
+    case 'DELETE stock':
+        $id = (int) ($segments[2] ?? 0);
+        if (!(new Pantry())->delete($id)) {
+            respond(404, ['status' => 'error', 'message' => "Ingrédient #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'message' => 'Ingrédient retiré.']);
         break;
 
     // ---- GET /backend/foyer/history : repas des 30 derniers jours ----
