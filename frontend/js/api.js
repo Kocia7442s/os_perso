@@ -118,6 +118,28 @@ export function deleteShoppingItem(id) {
   return apiSend('DELETE', `/foyer/shopping/${id}`);
 }
 
+/* ----- Placards (inventory_pantry) ----- */
+
+/** Liste des ingrédients en stock (GET /foyer/stock). */
+export function getPantry() {
+  return apiGet('/foyer/stock');
+}
+
+/** Ajoute un ingrédient au stock (POST /foyer/stock). */
+export function addPantryItem(item_name, quantity, is_essential) {
+  return apiSend('POST', '/foyer/stock', { item_name, quantity, is_essential });
+}
+
+/** Modifie un ingrédient (PUT /foyer/stock/{id}) — champs partiels. */
+export function updatePantryItem(id, fields) {
+  return apiSend('PUT', `/foyer/stock/${id}`, fields);
+}
+
+/** Retire un ingrédient (DELETE /foyer/stock/{id}). */
+export function deletePantryItem(id) {
+  return apiSend('DELETE', `/foyer/stock/${id}`);
+}
+
 /**
  * Récupère les préférences du foyer (GET /backend/foyer/preferences).
  * @returns {Promise<Object>} { status, data: { household_size, veggie_meals, max_pasta, avoid } }

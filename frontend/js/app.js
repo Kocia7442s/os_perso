@@ -10,6 +10,7 @@
 import '../components/bento-card.js';        // enregistre <bento-card>
 import { getSystemStatus, generateWeeklyMenu, getCurrentMenu,
          getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem,
+         getPantry, addPantryItem, updatePantryItem, deletePantryItem,
          getPreferences, savePreferences } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
@@ -46,6 +47,8 @@ const VIEWS = {
         ` },
       { title: 'Liste de courses', icon: '🛒', id: 'card-shopping',
         body: '<div id="shopping-result"><p class="muted">Chargement…</p></div>' },
+      { title: 'Mes placards', icon: '🧺', id: 'card-pantry',
+        body: '<div id="pantry-result"><p class="muted">Chargement…</p></div>' },
       { title: 'Calendrier commun', icon: '📅',
         body: '<p class="muted">À venir.</p>' },
     ],
@@ -142,9 +145,12 @@ function initFoyerView() {
 
   // Affiche d'emblée le dernier menu enregistré (sans rappeler l'IA).
   loadCurrentMenu();
-  // …et la liste de courses, avec ses interactions.
+  // …la liste de courses, avec ses interactions.
   loadShoppingList();
   initShoppingInteractions();
+  // …et les placards.
+  loadPantry();
+  initPantryInteractions();
 }
 
 /** Charge et affiche la liste de courses dans sa carte. */
@@ -246,6 +252,120 @@ function initShoppingInteractions() {
       console.error('Ajout article échoué :', err.message);
     }
   });
+}
+
+// ---------------------------------------------------------------------------
+//  Mes placards (inventory_pantry) — liste éditable
+// ---------------------------------------------------------------------------
+
+/** Charge et affiche les placards dans leur carte. */
+async function loadPantry() {
+  const result = document.getElementById('pantry-result');
+  if (!result) return;
+
+  try {
+    const { data } = await getPantry();
+    result.innerHTML = renderPantry(data ?? []);
+  } catch (err) {
+    result.innerHTML = `<p class="error">Placards indisponibles : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/**
+ * Construit le HTML des placards (éditable).
+ * @param {Array} items [ { id, item_name, quantity, is_essential }, ... ]
+ */
+function renderPantry(items) {
+  let html = '';
+
+  if (!Array.isArray(items) || items.length === 0) {
+    html += '<p class="muted">Placards vides.</p>';
+  } else {
+    html += '<ul class="pantry-list">';
+    items.forEach(item => {
+      const starCls = item.is_essential ? 'pantry-essential on' : 'pantry-essential';
+      const star    = item.is_essential ? '★' : '☆';
+      html += `<li class="pantry-item" data-id="${item.id}">`
+            + `<button type="button" class="${starCls}" title="Essentiel (à toujours avoir)" aria-label="Essentiel">${star}</button>`
+            + `<span class="pantry-name">${escapeHtml(item.item_name)}</span>`
+            + `<input type="text" class="pantry-qty" value="${escapeAttr(item.quantity)}" maxlength="50" aria-label="Quantité" title="Modifier la quantité">`
+            + `<button type="button" class="pantry-delete" title="Retirer" aria-label="Retirer">✕</button>`
+            + `</li>`;
+    });
+    html += '</ul>';
+  }
+
+  html += `
+    <form class="pantry-add" autocomplete="off">
+      <input type="text" name="item_name" placeholder="Ajouter un ingrédient…" maxlength="255" required>
+      <input type="text" name="quantity" placeholder="Qté" maxlength="50" class="qty-input">
+      <label class="pantry-ess-check" title="Marquer comme essentiel">
+        <input type="checkbox" name="is_essential"> ★
+      </label>
+      <button type="submit" class="btn-primary" aria-label="Ajouter">+</button>
+    </form>`;
+
+  return html;
+}
+
+/** Câble les interactions des placards par délégation sur le conteneur. */
+function initPantryInteractions() {
+  const container = document.getElementById('pantry-result');
+  if (!container) return;
+
+  // Clic : bascule "essentiel" ou suppression.
+  container.addEventListener('click', async (e) => {
+    const li = e.target.closest('.pantry-item');
+    if (!li) return;
+    const id = Number(li.dataset.id);
+    try {
+      if (e.target.closest('.pantry-delete')) {
+        await deletePantryItem(id);
+        await loadPantry();
+      } else if (e.target.closest('.pantry-essential')) {
+        const on = e.target.closest('.pantry-essential').classList.contains('on');
+        await updatePantryItem(id, { is_essential: !on });
+        await loadPantry();
+      }
+    } catch (err) {
+      console.error('Action placards échouée :', err.message);
+    }
+  });
+
+  // Modification de la quantité (à la validation du champ : blur / Entrée).
+  container.addEventListener('change', async (e) => {
+    if (!e.target.classList.contains('pantry-qty')) return;
+    const li = e.target.closest('.pantry-item');
+    if (!li) return;
+    try {
+      await updatePantryItem(Number(li.dataset.id), { quantity: e.target.value.trim() });
+      await loadPantry();
+    } catch (err) {
+      console.error('Maj quantité échouée :', err.message);
+    }
+  });
+
+  // Ajout d'un ingrédient.
+  container.addEventListener('submit', async (e) => {
+    if (!e.target.classList.contains('pantry-add')) return;
+    e.preventDefault();
+    const form = e.target;
+    const name = form.item_name.value.trim();
+    if (!name) return;
+    try {
+      await addPantryItem(name, form.quantity.value.trim(), form.is_essential.checked);
+      await loadPantry();
+      const input = container.querySelector('.pantry-add input[name="item_name"]');
+      if (input) input.focus();
+    } catch (err) {
+      console.error('Ajout placard échoué :', err.message);
+    }
+  });
+}
+
+/** Échappe une valeur destinée à un attribut HTML (quotes incluses). */
+function escapeAttr(str) {
+  return escapeHtml(str).replace(/"/g, '&quot;');
 }
 
 /** Charge et affiche le dernier menu persistant au chargement de la vue Foyer. */
