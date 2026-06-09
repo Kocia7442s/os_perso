@@ -40,6 +40,23 @@ class Pantry
     }
 
     /**
+     * Indique si un ingrédient du même nom existe déjà (comparaison insensible
+     * à la casse / aux espaces). Sert à éviter les doublons lors d'un "ranger au placard".
+     */
+    public function existsByName(string $name): bool
+    {
+        $name = trim($name);
+        if ($name === '') {
+            return false;
+        }
+        $row = $this->db->query(
+            'SELECT 1 FROM inventory_pantry WHERE LOWER(item_name) = LOWER(:n) LIMIT 1',
+            [':n' => $name]
+        )->fetch();
+        return (bool) $row;
+    }
+
+    /**
      * Ajoute un ingrédient.
      * @return array|null L'ingrédient créé, ou null si le nom est vide.
      */

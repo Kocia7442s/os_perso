@@ -371,6 +371,20 @@ body {
 }
 .shopping-delete:hover { opacity: 1; color: var(--danger); background: var(--bg); }
 
+/* Bouton "ranger au placard" (visible sur les articles achetés) */
+.shopping-stock {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 6px 8px;
+  border-radius: 7px;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s, transform 0.1s;
+}
+.shopping-stock:hover { opacity: 1; background: var(--bg); transform: scale(1.1); }
+
 .shopping-add { display: flex; gap: 8px; margin-top: 12px; }
 .shopping-add input {
   flex: 1;

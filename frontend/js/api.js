@@ -129,6 +129,16 @@ export function deleteShoppingItem(id) {
   return apiSend('DELETE', `/foyer/shopping/${id}`);
 }
 
+/**
+ * Range un article acheté dans les placards (POST /foyer/to-pantry).
+ * L'ajoute à inventory_pantry (sans doublon) et le retire de la liste de courses.
+ * @param {number} id identifiant de l'article de courses.
+ * @returns {Promise<Object>} { status, merged, data, message }
+ */
+export function stockBoughtItem(id) {
+  return apiSend('POST', '/foyer/to-pantry', { id });
+}
+
 /* ----- Placards (inventory_pantry) ----- */
 
 /** Liste des ingrédients en stock (GET /foyer/stock). */

@@ -41,6 +41,27 @@ class ShoppingList
     }
 
     /**
+     * Lit un article par son id.
+     * @return array|null { id, nom, quantite, achete:bool } ou null s'il n'existe pas.
+     */
+    public function get(int $id): ?array
+    {
+        $row = $this->db->query(
+            'SELECT id, nom, quantite, statut_achete FROM shopping_items WHERE id = :id',
+            [':id' => $id]
+        )->fetch();
+        if (!$row) {
+            return null;
+        }
+        return [
+            'id'       => (int) $row['id'],
+            'nom'      => $row['nom'],
+            'quantite' => (string) ($row['quantite'] ?? ''),
+            'achete'   => (bool) (int) $row['statut_achete'],
+        ];
+    }
+
+    /**
      * Ajoute un article (à acheter).
      * @param  string      $nom
      * @param  string|null $quantite quantité libre ("250 g", "2 boîtes"…) ou null.

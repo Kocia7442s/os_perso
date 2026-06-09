@@ -9,7 +9,7 @@
 
 import '../components/bento-card.js';        // enregistre <bento-card>
 import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal,
-         getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem,
+         getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem, stockBoughtItem,
          getPantry, addPantryItem, updatePantryItem, deletePantryItem,
          getPreferences, savePreferences,
          getCalendarEvents, getCalendarRange } from './api.js';   // couche réseau
@@ -188,12 +188,17 @@ function renderShoppingList(items) {
       const mark = item.achete ? '☑' : '☐';
       const qty  = item.quantite
         ? `<span class="qty">${escapeHtml(item.quantite)}</span>` : '';
+      // Bouton "ranger au placard" : seulement pour un article déjà acheté.
+      const stock = item.achete
+        ? `<button type="button" class="shopping-stock" aria-label="Ranger au placard" title="Ranger au placard">🧺</button>`
+        : '';
       html += `<li class="${cls}" data-id="${item.id}">`
             + `<button type="button" class="shopping-toggle" aria-label="Cocher / décocher">`
             + `<span class="mark">${mark}</span>`
             + `<span class="label">${escapeHtml(item.nom)}</span>`
             + qty
             + `</button>`
+            + stock
             + `<button type="button" class="shopping-delete" aria-label="Supprimer" title="Supprimer">✕</button>`
             + `</li>`;
     });
@@ -226,7 +231,11 @@ function initShoppingInteractions() {
     const id = Number(li.dataset.id);
 
     try {
-      if (e.target.closest('.shopping-delete')) {
+      if (e.target.closest('.shopping-stock')) {
+        await stockBoughtItem(id);
+        await loadShoppingList(); // l'article quitte les courses…
+        await loadPantry();       // …et apparaît (ou est déjà) au placard
+      } else if (e.target.closest('.shopping-delete')) {
         await deleteShoppingItem(id);
         await loadShoppingList();
       } else if (e.target.closest('.shopping-toggle')) {

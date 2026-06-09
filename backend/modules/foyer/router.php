@@ -151,6 +151,46 @@ switch ("{$method} {$action}") {
         respond(200, ['status' => 'success', 'message' => 'Article supprimé.']);
         break;
 
+    // ---- POST /backend/foyer/to-pantry : "ranger au placard" (courses -> placards) ----
+    //      Body { id }. Déplace l'article de la liste de courses vers inventory_pantry
+    //      (avec sa quantité), sans doublon, puis le retire des courses. Transaction.
+    case 'POST to-pantry':
+        $body     = json_decode(file_get_contents('php://input'), true) ?? [];
+        $id       = (int) ($body['id'] ?? 0);
+        $shopping = new ShoppingList();
+        $pantry   = new Pantry();
+
+        $item = $shopping->get($id);
+        if ($item === null) {
+            respond(404, ['status' => 'error', 'message' => "Article #{$id} introuvable."]);
+        }
+
+        $pdo = Database::getInstance()->getConnection();
+        $pdo->beginTransaction();
+        try {
+            $merged     = $pantry->existsByName($item['nom']);
+            $pantryItem = null;
+            if (!$merged) {
+                // quantite vide -> null (Pantry retombe sur '1' par défaut).
+                $pantryItem = $pantry->add($item['nom'], $item['quantite'] !== '' ? $item['quantite'] : null);
+            }
+            $shopping->delete($id);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        respond(200, [
+            'status'  => 'success',
+            'merged'  => $merged, // true = déjà présent au placard, on a juste retiré des courses
+            'data'    => $pantryItem,
+            'message' => $merged
+                ? "« {$item['nom']} » est déjà au placard — retiré des courses."
+                : "« {$item['nom']} » rangé au placard.",
+        ]);
+        break;
+
     // ---- GET /backend/foyer/preferences : lire les préférences du foyer ----
     case 'GET preferences':
         $prefs = new Preferences();
