@@ -154,6 +154,13 @@ body {
   .main { padding: 18px 16px 84px; } /* marge basse pour la bottom bar */
 }
 
+/* Sous ~620px, une seule colonne tient dans la grille Bento : on annule le
+   "span 2" (posé en style inline par <bento-card>) pour éviter qu'une carte
+   large (Menu, Calendrier) ne force une 2e colonne et déborde horizontalement. */
+@media (max-width: 620px) {
+  .bento-grid > bento-card { grid-column: auto !important; }
+}
+
 /* =========================================================
    MODULE FOYER — Générateur de menu
    ========================================================= */
@@ -481,7 +488,12 @@ body {
 .cal-modal-body::-webkit-scrollbar-corner { background: transparent; }
 
 .cal-day-grid  { display: grid; grid-template-columns: 48px 1fr; }
-.cal-week-grid { display: grid; grid-template-columns: 48px repeat(7, minmax(0, 1fr)); }
+.cal-week-grid { display: grid; grid-template-columns: 48px repeat(7, minmax(86px, 1fr)); }
+
+/* Conteneur de la semaine : défile horizontalement si les 7 jours ne tiennent pas
+   (petit écran). cal-week-inner garde une largeur min lisible par colonne. */
+.cal-week { overflow-x: auto; }
+.cal-week-inner { width: max-content; min-width: 100%; }
 
 /* Colonne des heures (gouttière) */
 .cal-gutter { border-right: 1px solid var(--card-border); }
@@ -542,7 +554,7 @@ body {
 
 /* En-tête jours + ligne journée entière (vue semaine), alignés sur la grille */
 .cal-week-head, .cal-week-allday {
-  display: grid; grid-template-columns: 48px repeat(7, minmax(0, 1fr));
+  display: grid; grid-template-columns: 48px repeat(7, minmax(86px, 1fr));
 }
 .cal-corner { font-size: 0.7rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; }
 .cal-wday { text-align: center; padding: 6px 2px; font-size: 0.8rem; color: var(--text-muted); }
@@ -583,5 +595,15 @@ body {
 .cal-mc-more { font-size: 0.7rem; color: var(--text-muted); padding-left: 2px; }
 
 @media (max-width: 768px) {
+  .cal-modal { padding: 14px; }
+  .cal-modal-head { gap: 8px; }
   .cal-modal-title { order: 3; flex-basis: 100%; }
+}
+
+/* Vue mois sur téléphone : cellules plus compactes, chips plus petites. */
+@media (max-width: 560px) {
+  .cal-month-grid { gap: 3px; }
+  .cal-mc { min-height: 62px; padding: 3px; gap: 2px; }
+  .cal-mc-num { font-size: 0.7rem; }
+  .cal-mc-ev { font-size: 0.62rem; padding: 1px 3px; }
 }

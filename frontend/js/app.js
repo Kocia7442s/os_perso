@@ -724,7 +724,10 @@ function renderWeek(res, weekStart) {
   const grid = `<div class="cal-timeline" style="--ph:${PX_PER_HOUR}px">`
              + `<div class="cal-week-grid">${hourGutterHtml()}${cols}</div></div>`;
 
-  return legendHtml(res.calendars) + errorsHtml(res.errors || []) + head + allday + grid;
+  // En-tête + journée entière + timeline regroupés dans un conteneur scrollable
+  // horizontalement : sur petit écran, la semaine défile au lieu de s'écraser.
+  const week = `<div class="cal-week"><div class="cal-week-inner">${head}${allday}${grid}</div></div>`;
+  return legendHtml(res.calendars) + errorsHtml(res.errors || []) + week;
 }
 
 /** Vue mois : 6×7 cellules, chips d'événements (max 3 + "+N"), jour cliquable. */
