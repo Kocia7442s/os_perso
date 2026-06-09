@@ -12,9 +12,45 @@ class ShoppingList
 {
     private Database $db;
 
+    /**
+     * Rayons canoniques, dans l'ordre d'un parcours de magasin.
+     * Source de vérité partagée (l'IA et le front doivent s'y tenir).
+     * Le front en a une copie (app.js) — garder les deux listes synchronisées.
+     */
+    public const RAYONS = [
+        'Fruits & légumes',
+        'Boucherie & poissonnerie',
+        'Crémerie & frais',
+        'Épicerie salée',
+        'Épicerie sucrée',
+        'Boulangerie',
+        'Surgelés',
+        'Boissons',
+        'Hygiène & entretien',
+        'Autre',
+    ];
+
     public function __construct()
     {
         $this->db = Database::getInstance();
+    }
+
+    /**
+     * Normalise un rayon vers l'un des rayons canoniques (insensible à la casse).
+     * Toute valeur inconnue ou vide retombe sur "Autre".
+     */
+    public static function sanitizeRayon(?string $rayon): string
+    {
+        $rayon = trim((string) $rayon);
+        if ($rayon === '') {
+            return 'Autre';
+        }
+        foreach (self::RAYONS as $r) {
+            if (mb_strtolower($r) === mb_strtolower($rayon)) {
+                return $r;
+            }
+        }
+        return 'Autre';
     }
 
     /**
@@ -24,7 +60,7 @@ class ShoppingList
     public function getAll(): array
     {
         $rows = $this->db->query(
-            'SELECT id, nom, quantite, statut_achete
+            'SELECT id, nom, quantite, rayon, statut_achete
                FROM shopping_items
               ORDER BY statut_achete ASC, nom ASC'
         )->fetchAll();
@@ -35,6 +71,7 @@ class ShoppingList
                 'id'       => (int) $r['id'],
                 'nom'      => $r['nom'],
                 'quantite' => (string) ($r['quantite'] ?? ''),
+                'rayon'    => (string) ($r['rayon'] ?? 'Autre'),
                 'achete'   => (bool) (int) $r['statut_achete'],
             ];
         }, $rows);
@@ -47,7 +84,7 @@ class ShoppingList
     public function get(int $id): ?array
     {
         $row = $this->db->query(
-            'SELECT id, nom, quantite, statut_achete FROM shopping_items WHERE id = :id',
+            'SELECT id, nom, quantite, rayon, statut_achete FROM shopping_items WHERE id = :id',
             [':id' => $id]
         )->fetch();
         if (!$row) {
@@ -57,6 +94,7 @@ class ShoppingList
             'id'       => (int) $row['id'],
             'nom'      => $row['nom'],
             'quantite' => (string) ($row['quantite'] ?? ''),
+            'rayon'    => (string) ($row['rayon'] ?? 'Autre'),
             'achete'   => (bool) (int) $row['statut_achete'],
         ];
     }
@@ -65,23 +103,25 @@ class ShoppingList
      * Ajoute un article (à acheter).
      * @param  string      $nom
      * @param  string|null $quantite quantité libre ("250 g", "2 boîtes"…) ou null.
-     * @return array|null L'article créé { id, nom, quantite, achete:false }, ou null si nom vide.
+     * @param  string|null $rayon    rayon magasin (normalisé ; défaut "Autre").
+     * @return array|null L'article créé { id, nom, quantite, rayon, achete:false }, ou null si nom vide.
      */
-    public function add(string $nom, ?string $quantite = null): ?array
+    public function add(string $nom, ?string $quantite = null, ?string $rayon = null): ?array
     {
         $nom = trim($nom);
         if ($nom === '') {
             return null;
         }
         $quantite = $quantite !== null ? trim($quantite) : '';
+        $rayon    = self::sanitizeRayon($rayon);
 
         $this->db->query(
-            'INSERT INTO shopping_items (nom, quantite) VALUES (:nom, :q)',
-            [':nom' => $nom, ':q' => $quantite !== '' ? $quantite : null]
+            'INSERT INTO shopping_items (nom, quantite, rayon) VALUES (:nom, :q, :r)',
+            [':nom' => $nom, ':q' => $quantite !== '' ? $quantite : null, ':r' => $rayon]
         );
         $id = (int) $this->db->getConnection()->lastInsertId();
 
-        return ['id' => $id, 'nom' => $nom, 'quantite' => $quantite, 'achete' => false];
+        return ['id' => $id, 'nom' => $nom, 'quantite' => $quantite, 'rayon' => $rayon, 'achete' => false];
     }
 
     /**
@@ -93,7 +133,7 @@ class ShoppingList
     public function setStatus(int $id, ?bool $achete = null): ?array
     {
         $row = $this->db->query(
-            'SELECT id, nom, quantite, statut_achete FROM shopping_items WHERE id = :id',
+            'SELECT id, nom, quantite, rayon, statut_achete FROM shopping_items WHERE id = :id',
             [':id' => $id]
         )->fetch();
 
@@ -112,6 +152,7 @@ class ShoppingList
             'id'       => $id,
             'nom'      => $row['nom'],
             'quantite' => (string) ($row['quantite'] ?? ''),
+            'rayon'    => (string) ($row['rayon'] ?? 'Autre'),
             'achete'   => $new,
         ];
     }

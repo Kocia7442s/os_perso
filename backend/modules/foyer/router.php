@@ -123,7 +123,8 @@ switch ("{$method} {$action}") {
     case 'POST shopping':
         $body     = json_decode(file_get_contents('php://input'), true) ?? [];
         $quantite = isset($body['quantite']) ? (string) $body['quantite'] : null;
-        $item     = (new ShoppingList())->add((string) ($body['nom'] ?? ''), $quantite);
+        $rayon    = isset($body['rayon']) ? (string) $body['rayon'] : null;
+        $item     = (new ShoppingList())->add((string) ($body['nom'] ?? ''), $quantite, $rayon);
         if ($item === null) {
             respond(400, ['status' => 'error', 'message' => "Nom d'article manquant."]);
         }

@@ -115,8 +115,8 @@ export function getShoppingList() {
 }
 
 /** Ajoute un article à la liste de courses (POST /foyer/shopping). */
-export function addShoppingItem(nom, quantite) {
-  return apiSend('POST', '/foyer/shopping', { nom, quantite });
+export function addShoppingItem(nom, quantite, rayon) {
+  return apiSend('POST', '/foyer/shopping', { nom, quantite, rayon });
 }
 
 /** Coche/décoche un article (PUT /foyer/shopping/{id}). */

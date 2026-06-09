@@ -10,6 +10,7 @@
 require_once __DIR__ . '/../../core/Database.php';
 require_once __DIR__ . '/Preferences.php';
 require_once __DIR__ . '/Pantry.php';
+require_once __DIR__ . '/ShoppingList.php';
 
 class MenuGenerator
 {
@@ -184,13 +185,15 @@ class MenuGenerator
             //    donc les doublons internes au même menu sont aussi évités.
             $courses = $menu['liste_courses_deduite'] ?? [];
             foreach ($courses as $article) {
-                // Nouveau format : { ingredient, quantite }. On tolère l'ancien (string).
+                // Nouveau format : { ingredient, quantite, rayon }. On tolère l'ancien (string).
                 if (is_array($article)) {
                     $nom      = trim((string) ($article['ingredient'] ?? ''));
                     $quantite = trim((string) ($article['quantite'] ?? ''));
+                    $rayon    = ShoppingList::sanitizeRayon($article['rayon'] ?? null);
                 } else {
                     $nom      = is_string($article) ? trim($article) : '';
                     $quantite = '';
+                    $rayon    = 'Autre';
                 }
                 if ($nom === '') {
                     continue;
@@ -203,8 +206,8 @@ class MenuGenerator
                 )->fetch();
                 if (!$exists) {
                     $this->db->query(
-                        'INSERT INTO shopping_items (nom, quantite) VALUES (:nom, :q)',
-                        [':nom' => $nom, ':q' => $quantite !== '' ? $quantite : null]
+                        'INSERT INTO shopping_items (nom, quantite, rayon) VALUES (:nom, :q, :r)',
+                        [':nom' => $nom, ':q' => $quantite !== '' ? $quantite : null, ':r' => $rayon]
                     );
                 }
             }
@@ -365,6 +368,9 @@ class MenuGenerator
         $prompt .= "- Dans \"liste_courses_deduite\", liste UNIQUEMENT les ingrédients à acheter "
                  . "(ceux qui ne sont PAS déjà dans les placards), AVEC une quantité précise "
                  . "pour chacun (ex : \"250 g\", \"1 kg\", \"2 boîtes\", \"3 pièces\").\n";
+        $prompt .= "- Pour CHAQUE article de \"liste_courses_deduite\", indique aussi un \"rayon\" "
+                 . "de magasin choisi STRICTEMENT dans cette liste (recopie le libellé exact) : "
+                 . implode(', ', ShoppingList::RAYONS) . ".\n";
         if (!empty($prefs['avoid'])) {
             $prompt .= "- À ÉVITER ABSOLUMENT (allergies / interdits) : {$prefs['avoid']}.\n";
         }
@@ -393,8 +399,8 @@ class MenuGenerator
     {"jour": "Dimanche", "repas": {"midi": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}, "soir": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}}}
   ],
   "liste_courses_deduite": [
-    {"ingredient": "Beurre", "quantite": "250 g"},
-    {"ingredient": "Tomates", "quantite": "1 kg"}
+    {"ingredient": "Beurre", "quantite": "250 g", "rayon": "Crémerie & frais"},
+    {"ingredient": "Tomates", "quantite": "1 kg", "rayon": "Fruits & légumes"}
   ]
 }
 JSON;

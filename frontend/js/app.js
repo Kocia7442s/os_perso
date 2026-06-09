@@ -174,42 +174,88 @@ async function loadShoppingList() {
  * Construit le HTML de la liste de courses (interactive).
  * @param {Array} items [ { id, nom, achete }, ... ] (déjà triée côté backend)
  */
+/**
+ * Rayons de magasin, dans l'ordre d'un parcours (doit rester synchronisé avec
+ * ShoppingList::RAYONS côté backend).
+ */
+const SHOPPING_RAYONS = [
+  'Fruits & légumes',
+  'Boucherie & poissonnerie',
+  'Crémerie & frais',
+  'Épicerie salée',
+  'Épicerie sucrée',
+  'Boulangerie',
+  'Surgelés',
+  'Boissons',
+  'Hygiène & entretien',
+  'Autre',
+];
+
+/** Construit le `<li>` interactif d'un article de courses. */
+function renderShoppingItem(item) {
+  const cls  = item.achete ? 'shopping-item bought' : 'shopping-item';
+  const mark = item.achete ? '☑' : '☐';
+  const qty  = item.quantite ? `<span class="qty">${escapeHtml(item.quantite)}</span>` : '';
+  // Bouton "ranger au placard" : seulement pour un article déjà acheté.
+  const stock = item.achete
+    ? `<button type="button" class="shopping-stock" aria-label="Ranger au placard" title="Ranger au placard">🧺</button>`
+    : '';
+  return `<li class="${cls}" data-id="${item.id}">`
+       + `<button type="button" class="shopping-toggle" aria-label="Cocher / décocher">`
+       + `<span class="mark">${mark}</span>`
+       + `<span class="label">${escapeHtml(item.nom)}</span>`
+       + qty
+       + `</button>`
+       + stock
+       + `<button type="button" class="shopping-delete" aria-label="Supprimer" title="Supprimer">✕</button>`
+       + `</li>`;
+}
+
 function renderShoppingList(items) {
   let html = '';
+  const list = Array.isArray(items) ? items : [];
 
-  if (!Array.isArray(items) || items.length === 0) {
+  if (list.length === 0) {
     html += '<p class="muted">Liste de courses vide.</p>';
   } else {
-    const toBuy = items.filter(i => !i.achete).length;
-    html += `<p class="shopping-count">${toBuy} article(s) à acheter</p>`;
-    html += '<ul class="shopping-list">';
-    items.forEach(item => {
-      const cls  = item.achete ? 'shopping-item bought' : 'shopping-item';
-      const mark = item.achete ? '☑' : '☐';
-      const qty  = item.quantite
-        ? `<span class="qty">${escapeHtml(item.quantite)}</span>` : '';
-      // Bouton "ranger au placard" : seulement pour un article déjà acheté.
-      const stock = item.achete
-        ? `<button type="button" class="shopping-stock" aria-label="Ranger au placard" title="Ranger au placard">🧺</button>`
-        : '';
-      html += `<li class="${cls}" data-id="${item.id}">`
-            + `<button type="button" class="shopping-toggle" aria-label="Cocher / décocher">`
-            + `<span class="mark">${mark}</span>`
-            + `<span class="label">${escapeHtml(item.nom)}</span>`
-            + qty
-            + `</button>`
-            + stock
-            + `<button type="button" class="shopping-delete" aria-label="Supprimer" title="Supprimer">✕</button>`
-            + `</li>`;
+    const toBuy  = list.filter(i => !i.achete);
+    const bought = list.filter(i => i.achete);
+
+    // En-tête : compteur + bouton "copier" (export texte).
+    html += `<div class="shopping-head">`
+          + `<span class="shopping-count">${toBuy.length} article(s) à acheter</span>`
+          + `<button type="button" class="shopping-export" title="Copier la liste">📋 Copier</button>`
+          + `</div>`;
+
+    // Articles à acheter, groupés par rayon (ordre du parcours magasin).
+    const byRayon = new Map();
+    toBuy.forEach(it => {
+      const r = SHOPPING_RAYONS.includes(it.rayon) ? it.rayon : 'Autre';
+      if (!byRayon.has(r)) byRayon.set(r, []);
+      byRayon.get(r).push(it);
     });
-    html += '</ul>';
+    SHOPPING_RAYONS.forEach(rayon => {
+      const group = byRayon.get(rayon);
+      if (!group || !group.length) return;
+      html += `<h4 class="shopping-rayon">${escapeHtml(rayon)}</h4>`;
+      html += '<ul class="shopping-list">' + group.map(renderShoppingItem).join('') + '</ul>';
+    });
+
+    // Articles déjà achetés : section repliée en bas (toujours actionnable).
+    if (bought.length) {
+      html += `<h4 class="shopping-rayon done">✓ Achetés (${bought.length})</h4>`;
+      html += '<ul class="shopping-list">' + bought.map(renderShoppingItem).join('') + '</ul>';
+    }
   }
 
-  // Champ d'ajout (toujours présent, même si la liste est vide).
+  // Champ d'ajout (toujours présent, même si la liste est vide) avec choix du rayon.
+  const options = SHOPPING_RAYONS.map(r =>
+    `<option value="${escapeAttr(r)}"${r === 'Autre' ? ' selected' : ''}>${escapeHtml(r)}</option>`).join('');
   html += `
     <form class="shopping-add" autocomplete="off">
       <input type="text" name="nom" placeholder="Ajouter un article…" maxlength="255" required>
       <input type="text" name="quantite" placeholder="Qté" maxlength="50" class="qty-input">
+      <select name="rayon" class="rayon-select" aria-label="Rayon">${options}</select>
       <button type="submit" class="btn-primary" aria-label="Ajouter">+</button>
     </form>`;
 
@@ -224,8 +270,14 @@ function initShoppingInteractions() {
   const container = document.getElementById('shopping-result');
   if (!container) return;
 
-  // Clics : cocher/décocher (bouton toggle) ou supprimer (croix).
+  // Clics : export (copier), puis cocher/décocher / ranger / supprimer.
   container.addEventListener('click', async (e) => {
+    // Bouton "Copier" : hors de toute ligne d'article → géré en premier.
+    if (e.target.closest('.shopping-export')) {
+      await copyShoppingList(e.target.closest('.shopping-export'));
+      return;
+    }
+
     const li = e.target.closest('.shopping-item');
     if (!li) return;
     const id = Number(li.dataset.id);
@@ -254,9 +306,10 @@ function initShoppingInteractions() {
     e.preventDefault();
     const nom      = e.target.nom.value.trim();
     const quantite = e.target.quantite.value.trim();
+    const rayon    = e.target.rayon ? e.target.rayon.value : 'Autre';
     if (!nom) return;
     try {
-      await addShoppingItem(nom, quantite);
+      await addShoppingItem(nom, quantite, rayon);
       await loadShoppingList();
       // Re-focus sur le champ recréé, pour enchaîner les ajouts.
       const input = container.querySelector('.shopping-add input');
@@ -265,6 +318,69 @@ function initShoppingInteractions() {
       console.error('Ajout article échoué :', err.message);
     }
   });
+}
+
+/**
+ * Construit le texte de la liste (articles à acheter, groupés par rayon) et le
+ * copie dans le presse-papier. Donne un retour visuel bref sur le bouton.
+ */
+async function copyShoppingList(btn) {
+  let text = '';
+  try {
+    const { data } = await getShoppingList();
+    const toBuy = (Array.isArray(data) ? data : []).filter(i => !i.achete);
+    if (!toBuy.length) {
+      flashButton(btn, 'Liste vide');
+      return;
+    }
+    const lines = ['🛒 Liste de courses', ''];
+    SHOPPING_RAYONS.forEach(rayon => {
+      const group = toBuy.filter(i => (SHOPPING_RAYONS.includes(i.rayon) ? i.rayon : 'Autre') === rayon);
+      if (!group.length) return;
+      lines.push(`${rayon} :`);
+      group.forEach(i => lines.push(`  • ${i.nom}${i.quantite ? ` (${i.quantite})` : ''}`));
+      lines.push('');
+    });
+    text = lines.join('\n').trim();
+    flashButton(btn, await copyText(text) ? '✓ Copié' : '⚠️ Échec');
+  } catch (err) {
+    console.error('Copie de la liste échouée :', err.message);
+    flashButton(btn, '⚠️ Échec');
+  }
+}
+
+/** Copie un texte dans le presse-papier (API moderne + repli execCommand). */
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch (_) { /* on tente le repli ci-dessous */ }
+
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+/** Affiche un libellé temporaire sur un bouton puis restaure l'original. */
+function flashButton(btn, label) {
+  if (!btn) return;
+  const original = btn.textContent;
+  btn.textContent = label;
+  btn.disabled = true;
+  setTimeout(() => { btn.textContent = original; btn.disabled = false; }, 1500);
 }
 
 // ---------------------------------------------------------------------------

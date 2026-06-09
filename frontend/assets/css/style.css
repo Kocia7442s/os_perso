@@ -314,11 +314,42 @@ body {
 /* =========================================================
    LISTE DE COURSES
    ========================================================= */
-.shopping-count {
+.shopping-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin: 0 0 10px;
+}
+.shopping-count {
+  margin: 0;
   color: var(--text-muted);
   font-size: 0.82rem;
 }
+.shopping-export {
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  border-radius: 7px;
+  padding: 4px 10px;
+  font-size: 0.76rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.shopping-export:hover { color: var(--text); border-color: var(--text-muted); }
+.shopping-export:disabled { opacity: 0.7; cursor: default; }
+
+/* En-têtes de rayon dans la liste */
+.shopping-rayon {
+  margin: 12px 0 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.shopping-rayon.done { color: var(--ok); opacity: 0.85; }
 .shopping-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .shopping-item {
   display: flex;
@@ -385,7 +416,19 @@ body {
 }
 .shopping-stock:hover { opacity: 1; background: var(--bg); transform: scale(1.1); }
 
-.shopping-add { display: flex; gap: 8px; margin-top: 12px; }
+.shopping-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.shopping-add .rayon-select {
+  flex: 0 0 auto;
+  max-width: 150px;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 8px 6px;
+  font: inherit;
+  font-size: 0.82rem;
+}
+.shopping-add .rayon-select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
 .shopping-add input {
   flex: 1;
   min-width: 0;        /* autorise le champ à rétrécir dans le flex (sinon il déborde) */

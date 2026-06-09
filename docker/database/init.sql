@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS shopping_items (
     id            INT UNSIGNED NOT NULL AUTO_INCREMENT,
     nom           VARCHAR(255) NOT NULL,
     quantite      VARCHAR(50)  DEFAULT NULL,          -- ex : "250 g", "2 boîtes" (libre)
+    rayon         VARCHAR(50)  NOT NULL DEFAULT 'Autre', -- rayon magasin (tri des courses)
     statut_achete TINYINT(1)   NOT NULL DEFAULT 0,    -- 0 = à acheter, 1 = acheté
     date_ajout    TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id)
