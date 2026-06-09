@@ -53,6 +53,17 @@ CREATE TABLE IF NOT EXISTS weekly_plan (
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Ingrédients de chaque plat du plan (renseignés par l'IA à la génération).
+-- Sert à décrémenter le placard quand un plat est marqué "cuisiné".
+CREATE TABLE IF NOT EXISTS meal_ingredients (
+    id             INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    weekly_plan_id INT UNSIGNED NOT NULL,            -- repas concerné (weekly_plan.id)
+    ingredient     VARCHAR(255) NOT NULL,
+    quantity       VARCHAR(50)  DEFAULT NULL,        -- texte libre ("250 g", "2 boîtes")
+    PRIMARY KEY (id),
+    KEY idx_meal_ing_plan (weekly_plan_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Préférences du foyer pour le générateur de menu (table à ligne unique).
 -- Injectées dans le prompt par MenuGenerator::buildPrompt().
 CREATE TABLE IF NOT EXISTS user_preferences (

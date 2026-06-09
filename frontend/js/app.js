@@ -801,13 +801,37 @@ function initMenuInteractions() {
     const target = !btn.classList.contains('on'); // état cuisiné visé
     btn.disabled = true;
     try {
-      await cookMeal(id, target);
+      const res = await cookMeal(id, target);
       await loadCurrentMenu(); // re-rend pour refléter l'état (et l'historique côté backend)
+      if (target) {
+        await loadPantry();    // le stock a été décrémenté → on rafraîchit la carte placards
+        showCookNotif(res?.data?.consumed ?? []);
+      }
     } catch (err) {
       console.error('Bascule "cuisiné" échouée :', err.message);
       btn.disabled = false;
     }
   });
+}
+
+/** Affiche un résumé du décompte de stock après "j'ai cuisiné" (carte Menu). */
+function showCookNotif(consumed) {
+  const result = document.getElementById('menu-result');
+  if (!result) return;
+
+  const parts = (Array.isArray(consumed) ? consumed : [])
+    .filter(c => c.action && c.action !== 'kept')
+    .map(c => {
+      if (c.action === 'updated') return `${c.ingredient} ${c.from} → ${c.to}`;
+      if (c.action === 'zeroed')  return `${c.ingredient} épuisé`;
+      return `${c.ingredient} retiré`; // 'removed'
+    });
+
+  const msg = parts.length
+    ? `🧺 Placard mis à jour : ${parts.join(' · ')}`
+    : '🧺 Aucun ingrédient décompté (plat sans ingrédients enregistrés, ou absent du placard).';
+
+  result.insertAdjacentHTML('afterbegin', `<p class="menu-notif">${escapeHtml(msg)}</p>`);
 }
 
 /**

@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/../../core/Database.php';
 require_once __DIR__ . '/Preferences.php';
+require_once __DIR__ . '/Pantry.php';
 
 class MenuGenerator
 {
@@ -84,6 +85,35 @@ class MenuGenerator
         return ['semaine' => array_values($byDay)];
     }
 
+    /**
+     * Normalise une valeur de repas issue de l'IA en { plat, ingredients }.
+     * Tolère l'ancien format (plat = simple chaîne, sans ingrédients).
+     * @return array{plat:string, ingredients:array}|null
+     */
+    private function extractMeal($value): ?array
+    {
+        if (is_array($value)) {
+            $plat = trim((string) ($value['plat'] ?? $value['nom'] ?? ''));
+            $ings = isset($value['ingredients']) && is_array($value['ingredients'])
+                ? $value['ingredients'] : [];
+            return $plat === '' ? null : ['plat' => $plat, 'ingredients' => $ings];
+        }
+        $plat = is_string($value) ? trim($value) : '';
+        return $plat === '' ? null : ['plat' => $plat, 'ingredients' => []];
+    }
+
+    /** Ingrédients enregistrés pour un repas du plan (weekly_plan.id). */
+    public function getMealIngredients(int $planId): array
+    {
+        return $this->db->query(
+            'SELECT ingredient, quantity
+               FROM meal_ingredients
+              WHERE weekly_plan_id = :id
+              ORDER BY id ASC',
+            [':id' => $planId]
+        )->fetchAll();
+    }
+
     // ---------------------------------------------------------------------
     //  Orchestration : génération complète du menu
     // ---------------------------------------------------------------------
@@ -113,17 +143,35 @@ class MenuGenerator
         $pdo = $this->db->getConnection();
         $pdo->beginTransaction();
         try {
-            // a) On vide puis réinsère le plan de la semaine.
+            // a) On vide puis réinsère le plan de la semaine + les ingrédients par plat.
+            $pdo->exec('DELETE FROM meal_ingredients');
             $pdo->exec('DELETE FROM weekly_plan');
             foreach ($menu['semaine'] as $jour) {
                 $dayName = $jour['jour']  ?? '';
                 $repas   = $jour['repas'] ?? [];
                 foreach (['midi', 'soir'] as $type) {
-                    if (!empty($repas[$type])) {
+                    $meal = $this->extractMeal($repas[$type] ?? null);
+                    if ($meal === null) {
+                        continue;
+                    }
+                    $this->db->query(
+                        'INSERT INTO weekly_plan (day_of_week, meal_type, meal_name)
+                         VALUES (:jour, :type, :nom)',
+                        [':jour' => $dayName, ':type' => $type, ':nom' => $meal['plat']]
+                    );
+                    $planId = (int) $pdo->lastInsertId();
+
+                    // Ingrédients du plat (pour le décompte du stock à la cuisson).
+                    foreach ($meal['ingredients'] as $ing) {
+                        $iName = trim((string) ($ing['ingredient'] ?? ''));
+                        if ($iName === '') {
+                            continue;
+                        }
+                        $iQty = trim((string) ($ing['quantite'] ?? ''));
                         $this->db->query(
-                            'INSERT INTO weekly_plan (day_of_week, meal_type, meal_name)
-                             VALUES (:jour, :type, :nom)',
-                            [':jour' => $dayName, ':type' => $type, ':nom' => $repas[$type]]
+                            'INSERT INTO meal_ingredients (weekly_plan_id, ingredient, quantity)
+                             VALUES (:p, :i, :q)',
+                            [':p' => $planId, ':i' => $iName, ':q' => $iQty !== '' ? $iQty : null]
                         );
                     }
                 }
@@ -205,6 +253,8 @@ class MenuGenerator
             return ['id' => (int) $row['id'], 'nom' => $row['meal_name'], 'cooked' => $current];
         }
 
+        $consumed = []; // résumé du décompte du stock (uniquement à la cuisson)
+
         $pdo = $this->db->getConnection();
         $pdo->beginTransaction();
         try {
@@ -220,6 +270,16 @@ class MenuGenerator
                      VALUES (:nom, CURRENT_DATE)',
                     [':nom' => $row['meal_name']]
                 );
+
+                // …et on décrémente le placard pour chaque ingrédient du plat.
+                // (Décrément unidirectionnel : décocher ne re-crédite PAS le stock.)
+                $pantry = new Pantry();
+                foreach ($this->getMealIngredients($id) as $ing) {
+                    $res = $pantry->consume($ing['ingredient'], $ing['quantity'] ?? null);
+                    if (!empty($res['found'])) {
+                        $consumed[] = $res; // on ne remonte que ce qui était réellement au placard
+                    }
+                }
             } else {
                 // Décoché : on retire l'archivage du jour pour ce plat (une ligne).
                 $this->db->query(
@@ -236,7 +296,12 @@ class MenuGenerator
             throw $e;
         }
 
-        return ['id' => (int) $row['id'], 'nom' => $row['meal_name'], 'cooked' => $target];
+        return [
+            'id'       => (int) $row['id'],
+            'nom'      => $row['meal_name'],
+            'cooked'   => $target,
+            'consumed' => $consumed,
+        ];
     }
 
     // ---------------------------------------------------------------------
@@ -293,8 +358,12 @@ class MenuGenerator
         $prompt .= "- N'utilise jamais le même ingrédient principal deux soirs de suite.\n";
         $prompt .= "- En semaine (le soir), privilégie des plats simples et rapides.\n";
         $prompt .= "- Le week-end, tu peux proposer des plats plus élaborés.\n";
-        $prompt .= "- Dans \"liste_courses_deduite\", liste les ingrédients nécessaires aux "
-                 . "repas qui ne sont PAS déjà dans les placards, AVEC une quantité précise "
+        $prompt .= "- Pour CHAQUE repas, fournis \"plat\" (le nom du plat) ET \"ingredients\" : "
+                 . "la liste COMPLÈTE des ingrédients du plat avec une quantité précise pour "
+                 . "chacun (ex : \"250 g\", \"1 kg\", \"2 boîtes\", \"3 pièces\"), Y COMPRIS ceux "
+                 . "déjà présents dans les placards (cette liste sert à décompter le stock après cuisson).\n";
+        $prompt .= "- Dans \"liste_courses_deduite\", liste UNIQUEMENT les ingrédients à acheter "
+                 . "(ceux qui ne sont PAS déjà dans les placards), AVEC une quantité précise "
                  . "pour chacun (ex : \"250 g\", \"1 kg\", \"2 boîtes\", \"3 pièces\").\n";
         if (!empty($prefs['avoid'])) {
             $prompt .= "- À ÉVITER ABSOLUMENT (allergies / interdits) : {$prefs['avoid']}.\n";
@@ -315,13 +384,13 @@ class MenuGenerator
         $prompt .= <<<JSON
 {
   "semaine": [
-    {"jour": "Lundi",    "repas": {"soir": "..."}},
-    {"jour": "Mardi",    "repas": {"soir": "..."}},
-    {"jour": "Mercredi", "repas": {"soir": "..."}},
-    {"jour": "Jeudi",    "repas": {"soir": "..."}},
-    {"jour": "Vendredi", "repas": {"soir": "..."}},
-    {"jour": "Samedi",   "repas": {"midi": "...", "soir": "..."}},
-    {"jour": "Dimanche", "repas": {"midi": "...", "soir": "..."}}
+    {"jour": "Lundi",    "repas": {"soir": {"plat": "Curry de lentilles", "ingredients": [{"ingredient": "Lentilles corail", "quantite": "250 g"}, {"ingredient": "Lait de coco", "quantite": "1 boîte"}]}}},
+    {"jour": "Mardi",    "repas": {"soir": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}}},
+    {"jour": "Mercredi", "repas": {"soir": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}}},
+    {"jour": "Jeudi",    "repas": {"soir": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}}},
+    {"jour": "Vendredi", "repas": {"soir": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}}},
+    {"jour": "Samedi",   "repas": {"midi": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}, "soir": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}}},
+    {"jour": "Dimanche", "repas": {"midi": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}, "soir": {"plat": "...", "ingredients": [{"ingredient": "...", "quantite": "..."}]}}}
   ],
   "liste_courses_deduite": [
     {"ingredient": "Beurre", "quantite": "250 g"},
@@ -375,7 +444,8 @@ JSON;
         // 2. Construction du payload (format Messages API).
         $payload = [
             'model'      => $model,
-            'max_tokens' => 2048,
+            // Sortie plus volumineuse depuis qu'on demande les ingrédients par plat.
+            'max_tokens' => 4096,
             // Le rôle "system" renforce la contrainte de sortie JSON pure.
             'system'     => 'Tu es un chef cuisinier pragmatique qui planifie les repas '
                           . 'd\'un foyer : tu varies les plats, équilibres les apports '
