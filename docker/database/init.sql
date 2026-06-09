@@ -17,12 +17,6 @@ CREATE TABLE IF NOT EXISTS shopping_items (
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Quelques articles de départ pour avoir de quoi afficher côté front.
-INSERT INTO shopping_items (nom, statut_achete) VALUES
-    ('Lait',  0),
-    ('Pain',  0),
-    ('Café',  1);
-
 
 -- =========================================================
 --  Module FOYER — Sous-projet : Générateur de Menu Intelligent
@@ -57,13 +51,6 @@ CREATE TABLE IF NOT EXISTS weekly_plan (
     meal_name   VARCHAR(255) NOT NULL,
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Quelques ingrédients de base dans les placards pour nos futurs tests.
-INSERT INTO inventory_pantry (item_name, quantity, is_essential) VALUES
-    ('Pâtes',        '500 g',    1),
-    ('Riz',          '1 kg',     1),
-    ('Sauce tomate', '2 boîtes', 0),
-    ('Œufs',         '6',        1);
 
 -- Préférences du foyer pour le générateur de menu (table à ligne unique).
 -- Injectées dans le prompt par MenuGenerator::buildPrompt().
