@@ -8,7 +8,7 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal,
+import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal, getRecipe, generateRecipe,
          getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem, stockBoughtItem,
          getPantry, addPantryItem, updatePantryItem, deletePantryItem,
          getPreferences, savePreferences,
@@ -911,6 +911,10 @@ function initMenuInteractions() {
   if (!container) return;
 
   container.addEventListener('click', async (e) => {
+    // Clic sur le nom du plat → ouvre la recette (modale).
+    const recipeBtn = e.target.closest('.meal-recipe');
+    if (recipeBtn) { openRecipeModal(Number(recipeBtn.dataset.id)); return; }
+
     const btn = e.target.closest('.meal-cook');
     if (!btn) return;
     const id = Number(btn.dataset.id);
@@ -948,6 +952,122 @@ function showCookNotif(consumed) {
     : '🧺 Aucun ingrédient décompté (plat sans ingrédients enregistrés, ou absent du placard).';
 
   result.insertAdjacentHTML('afterbegin', `<p class="menu-notif">${escapeHtml(msg)}</p>`);
+}
+
+// ---------------------------------------------------------------------------
+//  Recette d'un plat — modale (génération IA à la demande + cache)
+// ---------------------------------------------------------------------------
+
+let recipeCurrentId = null; // repas dont la recette est affichée dans la modale
+
+/** Crée la modale recette une fois (et câble fermeture + bouton "Générer"). */
+function ensureRecipeModal() {
+  let dialog = document.getElementById('recipe-dialog');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'recipe-dialog';
+  dialog.className = 'app-dialog recipe-modal';
+  dialog.innerHTML = `
+    <div class="recipe-head">
+      <h2 class="recipe-title" id="recipe-title">Recette</h2>
+      <button type="button" class="btn-ghost recipe-close" aria-label="Fermer">✕</button>
+    </div>
+    <div class="recipe-body" id="recipe-body"></div>`;
+  document.body.appendChild(dialog);
+
+  dialog.querySelector('.recipe-close').addEventListener('click', () => dialog.close());
+
+  // Bouton "Générer la recette" (présent quand la recette n'existe pas encore).
+  dialog.addEventListener('click', async (e) => {
+    const gen = e.target.closest('.recipe-generate');
+    if (!gen || recipeCurrentId == null) return;
+    gen.disabled = true;
+    gen.textContent = '⏳ Génération…';
+    const errEl = document.getElementById('recipe-error');
+    if (errEl) errEl.hidden = true;
+    try {
+      const { data } = await generateRecipe(recipeCurrentId);
+      renderRecipeInto(data);
+    } catch (err) {
+      if (errEl) { errEl.textContent = `❌ ${err.message}`; errEl.hidden = false; }
+      gen.disabled = false;
+      gen.textContent = '✨ Générer la recette';
+    }
+  });
+
+  return dialog;
+}
+
+/** Ouvre la modale et charge la recette (ou propose de la générer). */
+async function openRecipeModal(id) {
+  recipeCurrentId = id;
+  const dialog = ensureRecipeModal();
+  document.getElementById('recipe-title').textContent = 'Recette';
+  document.getElementById('recipe-body').innerHTML = '<p class="muted">Chargement…</p>';
+  dialog.showModal();
+
+  try {
+    const { data } = await getRecipe(id);
+    renderRecipeInto(data);
+  } catch (err) {
+    document.getElementById('recipe-body').innerHTML =
+      `<p class="error">${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Injecte le contenu (titre + corps) dans la modale. */
+function renderRecipeInto(data) {
+  const title = document.getElementById('recipe-title');
+  const body  = document.getElementById('recipe-body');
+  if (!data) { body.innerHTML = '<p class="error">Plat introuvable.</p>'; return; }
+  title.textContent = data.plat || 'Recette';
+  body.innerHTML = renderRecipe(data);
+}
+
+/** Construit le HTML d'une recette (ingrédients + étapes), ou l'invite à générer. */
+function renderRecipe(data) {
+  const r = data.recipe;
+
+  // Ingrédients : ceux de la recette si dispo, sinon ceux du plan (meal_ingredients).
+  const ings = (r && Array.isArray(r.ingredients) && r.ingredients.length)
+    ? r.ingredients.map(i => ({ nom: i.ingredient, q: i.quantite }))
+    : (data.ingredients || []).map(i => ({ nom: i.ingredient, q: i.quantity }));
+
+  let html = '';
+
+  // Méta (portions / temps / difficulté) si recette présente.
+  if (r) {
+    const meta = [];
+    if (r.portions)          meta.push(`🍽️ ${r.portions}`);
+    if (r.temps_preparation) meta.push(`🔪 ${r.temps_preparation}`);
+    if (r.temps_cuisson)     meta.push(`🔥 ${r.temps_cuisson}`);
+    if (r.difficulte)        meta.push(`📊 ${r.difficulte}`);
+    if (meta.length) html += `<p class="recipe-meta">${escapeHtml(meta.join(' · '))}</p>`;
+  }
+
+  if (ings.length) {
+    html += '<h3 class="recipe-sub">Ingrédients</h3><ul class="recipe-ings">';
+    ings.forEach(i => {
+      html += `<li>${escapeHtml(i.nom)}${i.q ? ` <span class="qty">${escapeHtml(i.q)}</span>` : ''}</li>`;
+    });
+    html += '</ul>';
+  }
+
+  if (!r) {
+    html += '<p class="muted recipe-empty">Recette pas encore générée pour ce plat.</p>';
+    html += '<p class="dialog-error" id="recipe-error" hidden></p>';
+    html += '<button type="button" class="btn-primary recipe-generate">✨ Générer la recette</button>';
+    return html;
+  }
+
+  if (Array.isArray(r.etapes) && r.etapes.length) {
+    html += '<h3 class="recipe-sub">Préparation</h3><ol class="recipe-steps">';
+    r.etapes.forEach(s => { html += `<li>${escapeHtml(String(s))}</li>`; });
+    html += '</ol>';
+  }
+
+  return html;
 }
 
 /**
@@ -1042,8 +1162,13 @@ function mealRow(label, meal) {
       + `title="${m.cooked ? 'Cuisiné — cliquer pour annuler' : 'Marquer comme cuisiné (archive l\'historique)'}" `
       + `aria-label="J'ai cuisiné ce plat">${m.cooked ? '✓ Cuisiné' : "J'ai cuisiné"}</button>`
     : '';
+  // Le nom du plat est cliquable (ouvre la recette) dès qu'on a un id.
+  const mealHtml = (m.id != null)
+    ? `<button type="button" class="menu-meal meal-recipe" data-id="${m.id}" `
+      + `title="Voir la recette">${escapeHtml(m.nom)}</button>`
+    : `<span class="menu-meal">${escapeHtml(m.nom)}</span>`;
   return `<li class="menu-item${cookedCls}"><span class="menu-day">${escapeHtml(label)}</span>`
-       + `<span class="menu-meal">${escapeHtml(m.nom)}</span>${btn}</li>`;
+       + `${mealHtml}${btn}</li>`;
 }
 
 /** Échappe le HTML — le contenu vient d'un LLM, on ne l'injecte jamais brut. */

@@ -96,6 +96,24 @@ export function getCurrentMenu() {
 }
 
 /**
+ * Récupère le plat, ses ingrédients et sa recette (GET /foyer/recipe/{id}).
+ * `recipe` est null tant qu'elle n'a pas été générée.
+ * @returns {Promise<Object>} { status, data: { id, plat, ingredients, recipe } }
+ */
+export function getRecipe(id) {
+  return apiGet(`/foyer/recipe/${id}`);
+}
+
+/**
+ * Génère la recette d'un plat via l'IA puis la met en cache (POST /foyer/recipe/{id}).
+ * @returns {Promise<Object>} { status, data: { id, plat, ingredients, recipe } }
+ * @throws {Error} message backend si l'IA échoue (ex : crédits insuffisants).
+ */
+export function generateRecipe(id) {
+  return apiSend('POST', `/foyer/recipe/${id}`);
+}
+
+/**
  * Bascule l'état "j'ai cuisiné" d'un repas du plan (PUT /foyer/cook/{id}).
  * Archive (ou retire) le repas dans l'historique côté backend.
  * @param {number} id     identifiant du repas (weekly_plan).

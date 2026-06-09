@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS weekly_plan (
     meal_type   VARCHAR(20)  NOT NULL,              -- ex : "Midi", "Soir"
     meal_name   VARCHAR(255) NOT NULL,
     cooked      TINYINT(1)   NOT NULL DEFAULT 0,    -- 1 = "j'ai cuisiné ce plat" (déclenche l'archivage historique)
+    recipe      TEXT         DEFAULT NULL,          -- recette générée par l'IA (JSON), à la demande puis mise en cache
     PRIMARY KEY (id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

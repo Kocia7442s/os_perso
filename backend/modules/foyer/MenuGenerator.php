@@ -116,6 +116,109 @@ class MenuGenerator
     }
 
     // ---------------------------------------------------------------------
+    //  Recettes (à la demande, mises en cache dans weekly_plan.recipe)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Renvoie le plat, ses ingrédients et sa recette (ou null si pas encore générée).
+     * @return array{id:int, plat:string, ingredients:array, recipe:?array}|null
+     *         null si le repas n'existe pas.
+     */
+    public function getRecipe(int $planId): ?array
+    {
+        $row = $this->db->query(
+            'SELECT id, meal_name, recipe FROM weekly_plan WHERE id = :id',
+            [':id' => $planId]
+        )->fetch();
+        if (!$row) {
+            return null;
+        }
+
+        $recipe = null;
+        if (!empty($row['recipe'])) {
+            $decoded = json_decode($row['recipe'], true);
+            if (is_array($decoded)) {
+                $recipe = $decoded;
+            }
+        }
+
+        return [
+            'id'          => (int) $row['id'],
+            'plat'        => $row['meal_name'],
+            'ingredients' => $this->getMealIngredients($planId),
+            'recipe'      => $recipe,
+        ];
+    }
+
+    /**
+     * Génère (via l'IA) la recette d'un plat et la met en cache, OU renvoie la
+     * recette déjà stockée sans rappeler l'IA. Renvoie null si le repas n'existe pas.
+     * @throws Exception si l'IA échoue ou renvoie un JSON non conforme.
+     */
+    public function generateRecipe(int $planId): ?array
+    {
+        $current = $this->getRecipe($planId);
+        if ($current === null) {
+            return null;
+        }
+        // Cache : déjà générée → pas de nouvel appel IA.
+        if ($current['recipe'] !== null) {
+            return $current;
+        }
+
+        $raw    = $this->callLLM($this->buildRecipePrompt($current['plat'], $current['ingredients']));
+        $recipe = $this->parseJsonResponse($raw);
+        if ($recipe === null || empty($recipe['etapes']) || !is_array($recipe['etapes'])) {
+            throw new Exception('Réponse IA invalide : recette non conforme au schéma attendu.');
+        }
+
+        $this->db->query(
+            'UPDATE weekly_plan SET recipe = :r WHERE id = :id',
+            [':r' => json_encode($recipe, JSON_UNESCAPED_UNICODE), ':id' => $planId]
+        );
+
+        $current['recipe'] = $recipe;
+        return $current;
+    }
+
+    /** Construit le prompt de recette pour un plat + ses ingrédients. */
+    private function buildRecipePrompt(string $plat, array $ingredients): string
+    {
+        $prefs = $this->prefs->get();
+
+        $lines = [];
+        foreach ($ingredients as $ing) {
+            $l = '- ' . $ing['ingredient'];
+            if (!empty($ing['quantity'])) {
+                $l .= ' (' . $ing['quantity'] . ')';
+            }
+            $lines[] = $l;
+        }
+        $ingText = $lines ? implode("\n", $lines) : '(non précisés — déduis-les du plat)';
+
+        $prompt  = "Donne la recette détaillée du plat : \"{$plat}\", "
+                 . "pour {$prefs['household_size']} personne(s).\n\n";
+        $prompt .= "Ingrédients prévus (complète si besoin) :\n{$ingText}\n\n";
+        $prompt .= "Réponds STRICTEMENT avec un unique objet JSON valide : aucun texte avant "
+                 . "ou après, AUCUN bloc de code markdown (pas de ```). Schéma EXACT :\n";
+        $prompt .= <<<JSON
+{
+  "portions": "4 personnes",
+  "temps_preparation": "15 min",
+  "temps_cuisson": "20 min",
+  "difficulte": "Facile",
+  "ingredients": [{"ingredient": "Riz", "quantite": "300 g"}],
+  "etapes": ["Première étape, claire et concise.", "Deuxième étape."]
+}
+JSON;
+        $prompt .= "\n\"etapes\" : 4 à 10 étapes courtes, dans l'ordre, rédigées à l'impératif. "
+                 . "\"ingredients\" : liste complète avec quantités pour le nombre de personnes indiqué. "
+                 . "\"difficulte\" : uniquement \"Facile\", \"Moyen\" ou \"Difficile\".";
+
+        return $prompt;
+    }
+
+    // ---------------------------------------------------------------------
     //  Orchestration : génération complète du menu
     // ---------------------------------------------------------------------
 

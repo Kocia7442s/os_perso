@@ -97,6 +97,26 @@ switch ("{$method} {$action}") {
         ]);
         break;
 
+    // ---- GET /backend/foyer/recipe/{id} : recette d'un plat (cache, sans IA) ----
+    case 'GET recipe':
+        $id   = (int) ($segments[2] ?? 0);
+        $data = $generator->getRecipe($id);
+        if ($data === null) {
+            respond(404, ['status' => 'error', 'message' => "Repas #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'data' => $data]);
+        break;
+
+    // ---- POST /backend/foyer/recipe/{id} : générer la recette (IA) + cache ----
+    case 'POST recipe':
+        $id   = (int) ($segments[2] ?? 0);
+        $data = $generator->generateRecipe($id); // peut lever (erreur IA) -> 500 propre
+        if ($data === null) {
+            respond(404, ['status' => 'error', 'message' => "Repas #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'data' => $data]);
+        break;
+
     // ---- PUT /backend/foyer/cook/{id} : "j'ai cuisiné ce plat" (bascule) ----
     //      Archive (ou retire) le repas dans l'historique → anti-répétition réelle.
     case 'PUT cook':
