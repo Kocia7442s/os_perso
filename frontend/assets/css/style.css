@@ -201,7 +201,30 @@ body {
   font-size: 0.9rem;
 }
 .menu-day  { color: var(--text-muted); font-weight: 500; white-space: nowrap; }
-.menu-meal { color: var(--text); text-align: right; }
+.menu-meal { color: var(--text); flex: 1; text-align: left; }
+
+/* Ligne de repas avec bouton "J'ai cuisiné" */
+.menu-item { flex-wrap: wrap; }
+.menu-item.cooked .menu-meal { color: var(--text-muted); text-decoration: line-through; }
+.meal-cook {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid var(--card-border);
+  color: var(--text-muted);
+  border-radius: 7px;
+  padding: 4px 9px;
+  font-size: 0.74rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.meal-cook:hover { color: var(--text); border-color: var(--text-muted); }
+.meal-cook:disabled { opacity: 0.5; cursor: progress; }
+.meal-cook.on {
+  color: var(--ok);
+  border-color: var(--ok);
+  background: rgba(81, 216, 138, 0.12);
+}
 
 .menu-notif {
   margin: 16px 0 0;

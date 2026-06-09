@@ -97,6 +97,19 @@ switch ("{$method} {$action}") {
         ]);
         break;
 
+    // ---- PUT /backend/foyer/cook/{id} : "j'ai cuisiné ce plat" (bascule) ----
+    //      Archive (ou retire) le repas dans l'historique → anti-répétition réelle.
+    case 'PUT cook':
+        $id     = (int) ($segments[2] ?? 0);
+        $body   = json_decode(file_get_contents('php://input'), true) ?? [];
+        $cooked = array_key_exists('cooked', $body) ? (bool) $body['cooked'] : null;
+        $meal   = $generator->setCooked($id, $cooked);
+        if ($meal === null) {
+            respond(404, ['status' => 'error', 'message' => "Repas #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'data' => $meal]);
+        break;
+
     // ---- GET /backend/foyer/shopping : liste de courses ----
     case 'GET shopping':
         $list = new ShoppingList();

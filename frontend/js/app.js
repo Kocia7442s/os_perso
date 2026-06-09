@@ -8,7 +8,7 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus, generateWeeklyMenu, getCurrentMenu,
+import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal,
          getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem,
          getPantry, addPantryItem, updatePantryItem, deletePantryItem,
          getPreferences, savePreferences,
@@ -146,6 +146,7 @@ function initFoyerView() {
 
   // Affiche d'emblée le dernier menu enregistré (sans rappeler l'IA).
   loadCurrentMenu();
+  initMenuInteractions();
   // …la liste de courses, avec ses interactions.
   loadShoppingList();
   initShoppingInteractions();
@@ -773,11 +774,31 @@ async function loadCurrentMenu() {
       result.innerHTML = '<p class="muted">Aucun menu pour l\'instant — clique sur « Générer le menu ».</p>';
       return;
     }
-    // On masque la notif "liste de courses" : pertinente uniquement après une génération.
-    result.innerHTML = renderMenu(data, { showShoppingNotif: false });
+    result.innerHTML = renderMenu(data);
   } catch (_) {
     result.innerHTML = ''; // chargement silencieux : pas d'erreur bloquante à l'arrivée
   }
+}
+
+/** Câble (par délégation) les boutons "J'ai cuisiné" de la carte Menu. */
+function initMenuInteractions() {
+  const container = document.getElementById('menu-result');
+  if (!container) return;
+
+  container.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.meal-cook');
+    if (!btn) return;
+    const id = Number(btn.dataset.id);
+    const target = !btn.classList.contains('on'); // état cuisiné visé
+    btn.disabled = true;
+    try {
+      await cookMeal(id, target);
+      await loadCurrentMenu(); // re-rend pour refléter l'état (et l'historique côté backend)
+    } catch (err) {
+      console.error('Bascule "cuisiné" échouée :', err.message);
+      btn.disabled = false;
+    }
+  });
 }
 
 /**
@@ -797,10 +818,15 @@ async function handleMenuGeneration() {
 
   try {
     const response = await generateWeeklyMenu();
-    result.innerHTML = renderMenu(response.data);
+    // On recharge le plan PERSISTANT (avec ids + état "cuisiné") plutôt que la
+    // réponse brute de l'IA → les boutons "J'ai cuisiné" sont opérationnels d'emblée.
+    await loadCurrentMenu();
     // La génération a aussi mis à jour la liste de courses en base :
     // on rafraîchit sa carte pour voir les ingrédients déduits sans recharger la page.
     await loadShoppingList();
+    const nb = response.data?.articles_ajoutes ?? 0;
+    result.insertAdjacentHTML('afterbegin',
+      `<p class="menu-notif">🛒 Liste de courses mise à jour : <strong>${nb}</strong> article(s) ajouté(s).</p>`);
   } catch (err) {
     result.innerHTML = `<p class="error">❌ Échec de la génération : ${escapeHtml(err.message)}</p>`;
   } finally {
@@ -812,9 +838,12 @@ async function handleMenuGeneration() {
 
 /**
  * Construit le HTML d'affichage du menu à partir des données du backend.
- * @param {Object} data { jours_planifies, articles_ajoutes, menu: {semaine, liste_courses_deduite} }
+ * Chaque repas porte un bouton "J'ai cuisiné" (s'il vient du plan persistant,
+ * donc avec un id). Les données de génération brute (plats en chaînes) restent
+ * tolérées mais sans bouton.
+ * @param {Object} data { menu: { semaine } }
  */
-function renderMenu(data, { showShoppingNotif = true } = {}) {
+function renderMenu(data) {
   if (!data || !data.menu || !Array.isArray(data.menu.semaine)) {
     return '<p class="error">Réponse inattendue du serveur.</p>';
   }
@@ -826,35 +855,46 @@ function renderMenu(data, { showShoppingNotif = true } = {}) {
 
   // --- Soirs de la semaine (Lundi -> Vendredi) ---
   let html = '<div class="menu-block"><h3 class="menu-title">🌙 Soirs de la semaine</h3><ul class="menu-list">';
-  enSemaine.forEach(j => {
-    const soir = j.repas?.soir ?? '—';
-    html += `<li><span class="menu-day">${escapeHtml(j.jour)}</span>`
-          + `<span class="menu-meal">${escapeHtml(soir)}</span></li>`;
-  });
+  enSemaine.forEach(j => { html += mealRow(j.jour, j.repas?.soir); });
   html += '</ul></div>';
 
   // --- Week-end (midi + soir) ---
   html += '<div class="menu-block"><h3 class="menu-title">🥐 Week-end</h3><ul class="menu-list">';
   weekend.forEach(j => {
-    if (j.repas?.midi) {
-      html += `<li><span class="menu-day">${escapeHtml(j.jour)} midi</span>`
-            + `<span class="menu-meal">${escapeHtml(j.repas.midi)}</span></li>`;
-    }
-    if (j.repas?.soir) {
-      html += `<li><span class="menu-day">${escapeHtml(j.jour)} soir</span>`
-            + `<span class="menu-meal">${escapeHtml(j.repas.soir)}</span></li>`;
-    }
+    if (j.repas?.midi) html += mealRow(`${j.jour} midi`, j.repas.midi);
+    if (j.repas?.soir) html += mealRow(`${j.jour} soir`, j.repas.soir);
   });
   html += '</ul></div>';
 
-  // --- Notification liste de courses (uniquement juste après une génération) ---
-  if (showShoppingNotif) {
-    const nb = data.articles_ajoutes ?? (data.menu.liste_courses_deduite?.length ?? 0);
-    html += `<p class="menu-notif">🛒 Liste de courses mise à jour : `
-          + `<strong>${nb}</strong> article(s) ajouté(s).</p>`;
-  }
-
   return html;
+}
+
+/** Normalise un repas (objet {id,nom,cooked} OU chaîne brute) en objet, ou null. */
+function normalizeMeal(meal) {
+  if (meal == null) return null;
+  if (typeof meal === 'object') {
+    const nom = String(meal.nom ?? '').trim();
+    return nom ? { id: meal.id ?? null, nom, cooked: !!meal.cooked } : null;
+  }
+  const nom = String(meal).trim();
+  return nom ? { id: null, nom, cooked: false } : null;
+}
+
+/** Une ligne de repas : libellé du jour + plat + bouton "J'ai cuisiné". */
+function mealRow(label, meal) {
+  const m = normalizeMeal(meal);
+  if (!m) {
+    return `<li class="menu-item"><span class="menu-day">${escapeHtml(label)}</span>`
+         + `<span class="menu-meal">—</span></li>`;
+  }
+  const cookedCls = m.cooked ? ' cooked' : '';
+  const btn = (m.id != null)
+    ? `<button type="button" class="meal-cook${m.cooked ? ' on' : ''}" data-id="${m.id}" `
+      + `title="${m.cooked ? 'Cuisiné — cliquer pour annuler' : 'Marquer comme cuisiné (archive l\'historique)'}" `
+      + `aria-label="J'ai cuisiné ce plat">${m.cooked ? '✓ Cuisiné' : "J'ai cuisiné"}</button>`
+    : '';
+  return `<li class="menu-item${cookedCls}"><span class="menu-day">${escapeHtml(label)}</span>`
+       + `<span class="menu-meal">${escapeHtml(m.nom)}</span>${btn}</li>`;
 }
 
 /** Échappe le HTML — le contenu vient d'un LLM, on ne l'injecte jamais brut. */

@@ -96,6 +96,17 @@ export function getCurrentMenu() {
 }
 
 /**
+ * Bascule l'état "j'ai cuisiné" d'un repas du plan (PUT /foyer/cook/{id}).
+ * Archive (ou retire) le repas dans l'historique côté backend.
+ * @param {number} id     identifiant du repas (weekly_plan).
+ * @param {boolean} cooked état cible.
+ * @returns {Promise<Object>} { status, data: { id, nom, cooked } }
+ */
+export function cookMeal(id, cooked) {
+  return apiSend('PUT', `/foyer/cook/${id}`, { cooked });
+}
+
+/**
  * Récupère la liste de courses (GET /backend/foyer/shopping).
  * @returns {Promise<Object>} { status, data: [ { id, nom, achete }, ... ] }
  */

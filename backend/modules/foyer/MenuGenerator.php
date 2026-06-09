@@ -60,19 +60,25 @@ class MenuGenerator
     public function getCurrentPlan(): array
     {
         $rows = $this->db->query(
-            'SELECT day_of_week, meal_type, meal_name
+            'SELECT id, day_of_week, meal_type, meal_name, cooked
                FROM weekly_plan
               ORDER BY id ASC'
         )->fetchAll();
 
         // Regroupe par jour en conservant l'ordre d'insertion (= ordre des jours).
+        // Chaque repas est exposé en objet { id, nom, cooked } pour permettre au
+        // front de cibler le bouton "j'ai cuisiné" et d'afficher l'état.
         $byDay = [];
         foreach ($rows as $r) {
             $d = $r['day_of_week'];
             if (!isset($byDay[$d])) {
                 $byDay[$d] = ['jour' => $d, 'repas' => []];
             }
-            $byDay[$d]['repas'][$r['meal_type']] = $r['meal_name'];
+            $byDay[$d]['repas'][$r['meal_type']] = [
+                'id'     => (int) $r['id'],
+                'nom'    => $r['meal_name'],
+                'cooked' => (bool) (int) $r['cooked'],
+            ];
         }
 
         return ['semaine' => array_values($byDay)];
@@ -155,22 +161,10 @@ class MenuGenerator
                 }
             }
 
-            // c) Archive les repas du menu dans l'historique : c'est ce qui rend
-            //    l'anti-répétition réelle pour les prochaines générations.
-            //    (date_consumed = aujourd'hui ; category laissée à NULL pour l'instant.)
-            foreach ($menu['semaine'] as $jour) {
-                $repas = $jour['repas'] ?? [];
-                foreach (['midi', 'soir'] as $type) {
-                    $nom = $repas[$type] ?? '';
-                    if (is_string($nom) && trim($nom) !== '') {
-                        $this->db->query(
-                            'INSERT INTO meals_history (meal_name, date_consumed)
-                             VALUES (:nom, CURRENT_DATE)',
-                            [':nom' => trim($nom)]
-                        );
-                    }
-                }
-            }
+            // NB : on N'ARCHIVE PLUS les repas dans meals_history à la génération.
+            //    L'archivage se fait désormais via cookMeal() quand l'utilisateur
+            //    clique "J'ai cuisiné" → l'anti-répétition reflète ce qui a VRAIMENT
+            //    été mangé (et non chaque menu généré/régénéré, qui faussait tout).
 
             $pdo->commit();
         } catch (Throwable $e) {
@@ -183,6 +177,66 @@ class MenuGenerator
             'articles_ajoutes' => count($menu['liste_courses_deduite'] ?? []),
             'menu'             => $menu,
         ];
+    }
+
+    /**
+     * "J'ai cuisiné ce plat" (bascule). C'est le SEUL déclencheur d'archivage
+     * dans meals_history → l'anti-répétition reflète ce qui a vraiment été mangé.
+     *
+     * @param  int       $id     identifiant de la ligne weekly_plan.
+     * @param  bool|null  $cooked true/false pour fixer ; null pour basculer.
+     * @return array|null { id, nom, cooked:bool } ou null si l'id n'existe pas.
+     */
+    public function setCooked(int $id, ?bool $cooked = null): ?array
+    {
+        $row = $this->db->query(
+            'SELECT id, meal_name, cooked FROM weekly_plan WHERE id = :id',
+            [':id' => $id]
+        )->fetch();
+        if (!$row) {
+            return null;
+        }
+
+        $current = (bool) (int) $row['cooked'];
+        $target  = $cooked === null ? !$current : $cooked;
+
+        // Pas de changement : rien à faire (évite un doublon/suppression en trop).
+        if ($target === $current) {
+            return ['id' => (int) $row['id'], 'nom' => $row['meal_name'], 'cooked' => $current];
+        }
+
+        $pdo = $this->db->getConnection();
+        $pdo->beginTransaction();
+        try {
+            $this->db->query(
+                'UPDATE weekly_plan SET cooked = :c WHERE id = :id',
+                [':c' => $target ? 1 : 0, ':id' => $id]
+            );
+
+            if ($target) {
+                // On archive le repas (consommé aujourd'hui).
+                $this->db->query(
+                    'INSERT INTO meals_history (meal_name, date_consumed)
+                     VALUES (:nom, CURRENT_DATE)',
+                    [':nom' => $row['meal_name']]
+                );
+            } else {
+                // Décoché : on retire l'archivage du jour pour ce plat (une ligne).
+                $this->db->query(
+                    'DELETE FROM meals_history
+                      WHERE meal_name = :nom AND date_consumed = CURRENT_DATE
+                      LIMIT 1',
+                    [':nom' => $row['meal_name']]
+                );
+            }
+
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        return ['id' => (int) $row['id'], 'nom' => $row['meal_name'], 'cooked' => $target];
     }
 
     // ---------------------------------------------------------------------
