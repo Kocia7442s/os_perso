@@ -84,6 +84,11 @@ try {
             require __DIR__ . '/modules/foyer/router.php';
             break;
 
+        // ---- Module CALENDRIER : /backend/calendrier/... ----
+        case 'calendrier':
+            require __DIR__ . '/modules/calendrier/router.php';
+            break;
+
         // ---- Autres modules à venir (à décommenter le moment venu) ----
         // case 'domotique':
         //     require __DIR__ . '/modules/domotique/router.php';

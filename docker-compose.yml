@@ -36,6 +36,26 @@ services:
       # Accès à l'IA, lu en PHP via getenv(). La clé reste hors du code (.env).
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY}
       ANTHROPIC_MODEL: ${ANTHROPIC_MODEL}
+      # Calendrier commun : URLs des flux iCal publiés (lecture seule, lus via getenv()).
+      # Le ":-" fournit une valeur vide par défaut si la variable n'est pas dans .env.
+      CAL_1_NAME: ${CAL_1_NAME:-}
+      CAL_1_URL: ${CAL_1_URL:-}
+      CAL_1_COLOR: ${CAL_1_COLOR:-}
+      CAL_2_NAME: ${CAL_2_NAME:-}
+      CAL_2_URL: ${CAL_2_URL:-}
+      CAL_2_COLOR: ${CAL_2_COLOR:-}
+      CAL_3_NAME: ${CAL_3_NAME:-}
+      CAL_3_URL: ${CAL_3_URL:-}
+      CAL_3_COLOR: ${CAL_3_COLOR:-}
+      CAL_4_NAME: ${CAL_4_NAME:-}
+      CAL_4_URL: ${CAL_4_URL:-}
+      CAL_4_COLOR: ${CAL_4_COLOR:-}
+      CAL_5_NAME: ${CAL_5_NAME:-}
+      CAL_5_URL: ${CAL_5_URL:-}
+      CAL_5_COLOR: ${CAL_5_COLOR:-}
+      CAL_6_NAME: ${CAL_6_NAME:-}
+      CAL_6_URL: ${CAL_6_URL:-}
+      CAL_6_COLOR: ${CAL_6_COLOR:-}
 
   # ----------------------------------------------------------------
   # Base de données : MariaDB

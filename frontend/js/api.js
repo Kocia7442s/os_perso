@@ -140,6 +140,18 @@ export function deletePantryItem(id) {
   return apiSend('DELETE', `/foyer/stock/${id}`);
 }
 
+/* ----- Calendrier commun (flux iCal, lecture seule) ----- */
+
+/**
+ * Agenda fusionné des calendriers configurés (GET /backend/calendrier/events).
+ * @param {number} [days=60] fenêtre en jours à partir d'aujourd'hui.
+ * @returns {Promise<Object>} { status, count, data: [ { title, start, end,
+ *          all_day, location, calendar, color }, ... ], calendars, errors }
+ */
+export function getCalendarEvents(days = 60) {
+  return apiGet(`/calendrier/events?days=${encodeURIComponent(days)}`);
+}
+
 /**
  * Récupère les préférences du foyer (GET /backend/foyer/preferences).
  * @returns {Promise<Object>} { status, data: { household_size, veggie_meals, max_pasta, avoid } }

@@ -11,7 +11,8 @@ import '../components/bento-card.js';        // enregistre <bento-card>
 import { getSystemStatus, generateWeeklyMenu, getCurrentMenu,
          getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem,
          getPantry, addPantryItem, updatePantryItem, deletePantryItem,
-         getPreferences, savePreferences } from './api.js';   // couche réseau
+         getPreferences, savePreferences,
+         getCalendarEvents } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -49,8 +50,8 @@ const VIEWS = {
         body: '<div id="shopping-result"><p class="muted">Chargement…</p></div>' },
       { title: 'Mes placards', icon: '🧺', id: 'card-pantry',
         body: '<div id="pantry-result"><p class="muted">Chargement…</p></div>' },
-      { title: 'Calendrier commun', icon: '📅',
-        body: '<p class="muted">À venir.</p>' },
+      { title: 'Calendrier commun', icon: '📅', span: 2, id: 'card-calendar',
+        body: '<div id="calendar-result"><p class="muted">Chargement…</p></div>' },
     ],
   },
   domotique: {
@@ -151,6 +152,8 @@ function initFoyerView() {
   // …et les placards.
   loadPantry();
   initPantryInteractions();
+  // …et l'agenda commun (calendriers Apple publiés).
+  loadCalendar();
 }
 
 /** Charge et affiche la liste de courses dans sa carte. */
@@ -366,6 +369,120 @@ function initPantryInteractions() {
 /** Échappe une valeur destinée à un attribut HTML (quotes incluses). */
 function escapeAttr(str) {
   return escapeHtml(str).replace(/"/g, '&quot;');
+}
+
+// ---------------------------------------------------------------------------
+//  Calendrier commun — agenda fusionné (flux iCal Apple, lecture seule)
+// ---------------------------------------------------------------------------
+
+/** Charge et affiche l'agenda des prochains jours dans sa carte. */
+async function loadCalendar() {
+  const result = document.getElementById('calendar-result');
+  if (!result) return;
+
+  try {
+    const res = await getCalendarEvents(30);
+    result.innerHTML = renderCalendar(res);
+  } catch (err) {
+    result.innerHTML = `<p class="error">Agenda indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/**
+ * Construit le HTML de l'agenda : légende des calendriers + événements
+ * groupés par jour. Données déjà triées chronologiquement par le backend.
+ * @param {Object} res { data, calendars, errors }
+ */
+function renderCalendar(res) {
+  const events    = Array.isArray(res?.data) ? res.data : [];
+  const calendars = Array.isArray(res?.calendars) ? res.calendars : [];
+  const errors    = Array.isArray(res?.errors) ? res.errors : [];
+
+  // Aucun calendrier configuré : on guide l'utilisateur vers le .env.
+  if (calendars.length === 0) {
+    return '<p class="muted">Aucun calendrier configuré. Publie tes agendas Apple '
+         + '(Partager → Calendrier public) et colle les URLs dans <code>CAL_1_URL</code> / '
+         + '<code>CAL_2_URL</code> du fichier <code>.env</code>.</p>';
+  }
+
+  let html = '';
+
+  // Légende : une pastille colorée par calendrier.
+  html += '<div class="cal-legend">';
+  calendars.forEach(c => {
+    html += `<span class="cal-chip"><span class="cal-dot" style="background:${escapeAttr(c.color)}"></span>`
+          + `${escapeHtml(c.name)}</span>`;
+  });
+  html += '</div>';
+
+  // Erreurs éventuelles de récupération (flux injoignable…), non bloquantes.
+  errors.forEach(msg => {
+    html += `<p class="cal-warn">⚠️ ${escapeHtml(msg)}</p>`;
+  });
+
+  if (events.length === 0) {
+    html += '<p class="muted">Aucun événement dans les 30 prochains jours.</p>';
+    return html;
+  }
+
+  // Regroupement par jour (clé = date locale AAAA-MM-JJ).
+  const groups = new Map();
+  events.forEach(ev => {
+    const day = dayKey(ev);
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(ev);
+  });
+
+  html += '<div class="cal-agenda">';
+  for (const [day, dayEvents] of groups) {
+    html += `<div class="cal-day"><h4 class="cal-day-title">${escapeHtml(formatDayLabel(day))}</h4><ul class="cal-events">`;
+    dayEvents.forEach(ev => {
+      const time = ev.all_day
+        ? '<span class="cal-time">Journée</span>'
+        : `<span class="cal-time">${escapeHtml(formatTime(ev.start))}</span>`;
+      const loc = ev.location
+        ? ` <span class="cal-loc">· ${escapeHtml(ev.location)}</span>` : '';
+      html += `<li class="cal-event">`
+            + `<span class="cal-dot" style="background:${escapeAttr(ev.color)}" title="${escapeAttr(ev.calendar)}"></span>`
+            + time
+            + `<span class="cal-title">${escapeHtml(ev.title)}${loc}</span>`
+            + `</li>`;
+    });
+    html += '</ul></div>';
+  }
+  html += '</div>';
+
+  return html;
+}
+
+/** Clé de regroupement par jour à partir d'un événement (date locale). */
+function dayKey(ev) {
+  // Journée entière : la valeur est déjà "AAAA-MM-JJ" (pas de fuseau à appliquer).
+  if (ev.all_day) return String(ev.start).slice(0, 10);
+  const d = new Date(ev.start);          // ISO avec offset → instant correct
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/** "2026-06-10" → "Mercredi 10 juin" (avec "Aujourd'hui"/"Demain" en tête). */
+function formatDayLabel(dayKeyStr) {
+  const [y, m, d] = dayKeyStr.split('-').map(Number);
+  const date  = new Date(y, m - 1, d);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const diff  = Math.round((date - today) / 86400000);
+
+  const label = date.toLocaleDateString('fr-FR',
+    { weekday: 'long', day: 'numeric', month: 'long' });
+  if (diff === 0) return `Aujourd'hui · ${label}`;
+  if (diff === 1) return `Demain · ${label}`;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+/** "2026-06-10T20:30:00+02:00" → "20:30" (heure locale du navigateur). */
+function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
 }
 
 /** Charge et affiche le dernier menu persistant au chargement de la vue Foyer. */
