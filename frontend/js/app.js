@@ -12,7 +12,7 @@ import { getSystemStatus, generateWeeklyMenu, getCurrentMenu,
          getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem,
          getPantry, addPantryItem, updatePantryItem, deletePantryItem,
          getPreferences, savePreferences,
-         getCalendarEvents } from './api.js';   // couche réseau
+         getCalendarEvents, getCalendarRange } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -375,114 +375,387 @@ function escapeAttr(str) {
 //  Calendrier commun — agenda fusionné (flux iCal Apple, lecture seule)
 // ---------------------------------------------------------------------------
 
-/** Charge et affiche l'agenda des prochains jours dans sa carte. */
-async function loadCalendar() {
-  const result = document.getElementById('calendar-result');
-  if (!result) return;
+// --- Constantes & petits helpers de dates (tout en heure locale du navigateur) ---
+const WEEKDAYS_SHORT = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
+const PX_PER_HOUR    = 44;   // hauteur d'une heure dans les timelines (sync avec --ph CSS)
 
-  try {
-    const res = await getCalendarEvents(30);
-    result.innerHTML = renderCalendar(res);
-  } catch (err) {
-    result.innerHTML = `<p class="error">Agenda indisponible : ${escapeHtml(err.message)}</p>`;
-  }
+/** État de la modale calendrier (mode courant + jour d'ancrage de la navigation). */
+const calState = { mode: 'week', anchor: null };
+
+const pad2       = (n) => String(n).padStart(2, '0');
+const ymd        = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const startOfDay = (d) => { const x = new Date(d); x.setHours(0, 0, 0, 0); return x; };
+const addDays    = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const addMonths  = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
+const parseYmd   = (s) => { const [y, m, d] = String(s).slice(0, 10).split('-').map(Number); return new Date(y, m - 1, d); };
+
+/** Lundi 00:00 de la semaine contenant `d`. */
+function startOfWeek(d) {
+  const x = startOfDay(d);
+  const dow = (x.getDay() + 6) % 7; // 0 = lundi
+  return addDays(x, -dow);
 }
 
-/**
- * Construit le HTML de l'agenda : légende des calendriers + événements
- * groupés par jour. Données déjà triées chronologiquement par le backend.
- * @param {Object} res { data, calendars, errors }
- */
-function renderCalendar(res) {
-  const events    = Array.isArray(res?.data) ? res.data : [];
-  const calendars = Array.isArray(res?.calendars) ? res.calendars : [];
-  const errors    = Array.isArray(res?.errors) ? res.errors : [];
+/** Début / fin d'un événement en objets Date (journée entière = bornes de jour). */
+const evStart = (ev) => ev.all_day ? startOfDay(parseYmd(ev.start)) : new Date(ev.start);
+const evEnd   = (ev) => ev.all_day ? startOfDay(parseYmd(ev.end))   : new Date(ev.end);
 
-  // Aucun calendrier configuré : on guide l'utilisateur vers le .env.
-  if (calendars.length === 0) {
-    return '<p class="muted">Aucun calendrier configuré. Publie tes agendas Apple '
-         + '(Partager → Calendrier public) et colle les URLs dans <code>CAL_1_URL</code> / '
-         + '<code>CAL_2_URL</code> du fichier <code>.env</code>.</p>';
-  }
-
-  let html = '';
-
-  // Légende : une pastille colorée par calendrier.
-  html += '<div class="cal-legend">';
-  calendars.forEach(c => {
-    html += `<span class="cal-chip"><span class="cal-dot" style="background:${escapeAttr(c.color)}"></span>`
-          + `${escapeHtml(c.name)}</span>`;
-  });
-  html += '</div>';
-
-  // Erreurs éventuelles de récupération (flux injoignable…), non bloquantes.
-  errors.forEach(msg => {
-    html += `<p class="cal-warn">⚠️ ${escapeHtml(msg)}</p>`;
-  });
-
-  if (events.length === 0) {
-    html += '<p class="muted">Aucun événement dans les 30 prochains jours.</p>';
-    return html;
-  }
-
-  // Regroupement par jour (clé = date locale AAAA-MM-JJ).
-  const groups = new Map();
-  events.forEach(ev => {
-    const day = dayKey(ev);
-    if (!groups.has(day)) groups.set(day, []);
-    groups.get(day).push(ev);
-  });
-
-  html += '<div class="cal-agenda">';
-  for (const [day, dayEvents] of groups) {
-    html += `<div class="cal-day"><h4 class="cal-day-title">${escapeHtml(formatDayLabel(day))}</h4><ul class="cal-events">`;
-    dayEvents.forEach(ev => {
-      const time = ev.all_day
-        ? '<span class="cal-time">Journée</span>'
-        : `<span class="cal-time">${escapeHtml(formatTime(ev.start))}</span>`;
-      const loc = ev.location
-        ? ` <span class="cal-loc">· ${escapeHtml(ev.location)}</span>` : '';
-      html += `<li class="cal-event">`
-            + `<span class="cal-dot" style="background:${escapeAttr(ev.color)}" title="${escapeAttr(ev.calendar)}"></span>`
-            + time
-            + `<span class="cal-title">${escapeHtml(ev.title)}${loc}</span>`
-            + `</li>`;
-    });
-    html += '</ul></div>';
-  }
-  html += '</div>';
-
-  return html;
-}
-
-/** Clé de regroupement par jour à partir d'un événement (date locale). */
-function dayKey(ev) {
-  // Journée entière : la valeur est déjà "AAAA-MM-JJ" (pas de fuseau à appliquer).
-  if (ev.all_day) return String(ev.start).slice(0, 10);
-  const d = new Date(ev.start);          // ISO avec offset → instant correct
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
-}
-
-/** "2026-06-10" → "Mercredi 10 juin" (avec "Aujourd'hui"/"Demain" en tête). */
-function formatDayLabel(dayKeyStr) {
-  const [y, m, d] = dayKeyStr.split('-').map(Number);
-  const date  = new Date(y, m - 1, d);
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const diff  = Math.round((date - today) / 86400000);
-
-  const label = date.toLocaleDateString('fr-FR',
-    { weekday: 'long', day: 'numeric', month: 'long' });
-  if (diff === 0) return `Aujourd'hui · ${label}`;
-  if (diff === 1) return `Demain · ${label}`;
-  return label.charAt(0).toUpperCase() + label.slice(1);
+/** Vrai si l'événement chevauche le jour `date` (fin de journée entière exclue). */
+function occursOnDay(ev, date) {
+  const dayStart = startOfDay(date);
+  const dayEnd   = addDays(dayStart, 1);
+  return evStart(ev) < dayEnd && evEnd(ev) > dayStart;
 }
 
 /** "2026-06-10T20:30:00+02:00" → "20:30" (heure locale du navigateur). */
 function formatTime(iso) {
   return new Date(iso).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+}
+
+/** "2026-06-10" → "Aujourd'hui · mercredi 10 juin" (ou "Demain · …"). */
+function formatDayLabel(dayKeyStr) {
+  const date  = parseYmd(dayKeyStr);
+  const today = startOfDay(new Date());
+  const diff  = Math.round((date - today) / 86400000);
+  const label = date.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+  if (diff === 0) return `Aujourd'hui · ${label}`;
+  if (diff === 1) return `Demain · ${label}`;
+  return label.charAt(0).toUpperCase() + label.slice(1);
+}
+
+// ---------------------------------------------------------------------------
+//  Chargement + vue JOUR (carte). La carte est cliquable → modale semaine/mois.
+// ---------------------------------------------------------------------------
+
+/** Charge les événements d'aujourd'hui et affiche la vue jour dans la carte. */
+async function loadCalendar() {
+  const result = document.getElementById('calendar-result');
+  if (!result) return;
+
+  const today = startOfDay(new Date());
+  try {
+    const res = await getCalendarRange(ymd(today), ymd(addDays(today, 1)));
+    result.innerHTML = renderDayCard(res, today);
+    scrollTimelineToNow(result);
+  } catch (err) {
+    result.innerHTML = `<p class="error">Agenda indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+  initCalendarCardClick();
+}
+
+/** Rend la vue jour (timeline 24 h) dans la carte — affichée même sans événement. */
+function renderDayCard(res, date) {
+  const events    = Array.isArray(res?.data) ? res.data : [];
+  const calendars = Array.isArray(res?.calendars) ? res.calendars : [];
+  const errors    = Array.isArray(res?.errors) ? res.errors : [];
+
+  if (calendars.length === 0) return configGuidanceHtml();
+
+  let html = `<div class="cal-card-head">`
+           + `<span class="cal-card-date">${escapeHtml(formatDayLabel(ymd(date)))}</span>`
+           + `<span class="cal-expand">⤢ semaine / mois</span></div>`;
+  html += legendHtml(calendars);
+  html += errorsHtml(errors);
+
+  const allday = allDayChipsHtml(events, date);
+  if (allday) html += `<div class="cal-allday-row">${allday}</div>`;
+
+  html += `<div class="cal-timeline" style="--ph:${PX_PER_HOUR}px">`
+        + `<div class="cal-day-grid">${hourGutterHtml()}${dayColumnHtml(events, date)}</div></div>`;
+  return html;
+}
+
+/** Câble (une seule fois) l'ouverture de la modale au clic sur la carte. */
+function initCalendarCardClick() {
+  const card = document.getElementById('card-calendar');
+  if (!card || card.dataset.clickable) return;
+  card.dataset.clickable = '1';
+  card.style.cursor = 'pointer';
+  card.addEventListener('click', () => openCalendarModal());
+}
+
+// ---------------------------------------------------------------------------
+//  Briques de rendu communes (légende, erreurs, timeline, chips journée…)
+// ---------------------------------------------------------------------------
+
+function configGuidanceHtml() {
+  return '<p class="muted">Aucun calendrier configuré. Publie tes agendas Apple '
+       + '(Partager → Calendrier public) et colle les URLs dans <code>CAL_1_URL</code> / '
+       + '<code>CAL_2_URL</code> du fichier <code>.env</code>.</p>';
+}
+
+function legendHtml(calendars) {
+  return '<div class="cal-legend">' + calendars.map(c =>
+    `<span class="cal-chip"><span class="cal-dot" style="background:${escapeAttr(c.color)}"></span>`
+    + `${escapeHtml(c.name)}</span>`).join('') + '</div>';
+}
+
+function errorsHtml(errors) {
+  return errors.map(msg => `<p class="cal-warn">⚠️ ${escapeHtml(msg)}</p>`).join('');
+}
+
+/** Colonne de gauche : 24 libellés d'heures (hauteur pilotée par --ph). */
+function hourGutterHtml() {
+  let h = '';
+  for (let i = 0; i < 24; i++) {
+    h += `<div class="cal-hour"><span>${pad2(i)}:00</span></div>`;
+  }
+  return `<div class="cal-gutter">${h}</div>`;
+}
+
+/** Chips des événements "journée entière" qui tombent sur `date`. */
+function allDayChipsHtml(events, date) {
+  return events.filter(e => e.all_day && occursOnDay(e, date)).map(e =>
+    `<span class="cal-allday" style="border-left-color:${escapeAttr(e.color)}" title="${escapeAttr(e.calendar)}">`
+    + `${escapeHtml(e.title)}</span>`).join('');
+}
+
+/**
+ * Une colonne-jour positionnée : les événements horaires de `date`, placés en
+ * absolu (top/hauteur selon l'heure) avec gestion des chevauchements en colonnes.
+ */
+function dayColumnHtml(events, date) {
+  const timed  = events.filter(e => !e.all_day && occursOnDay(e, date));
+  const placed = layoutDayEvents(timed);
+  const dayStart = startOfDay(date);
+
+  let h = '';
+  placed.forEach(p => {
+    const startMin = Math.max(0, (evStart(p.ev) - dayStart) / 60000);
+    const endMin   = Math.min(24 * 60, (evEnd(p.ev) - dayStart) / 60000);
+    const top      = startMin / 60 * PX_PER_HOUR;
+    const height   = Math.max(16, (endMin - startMin) / 60 * PX_PER_HOUR);
+    const widthPct = 100 / p.cols;
+    const leftPct  = widthPct * p.col;
+    const loc      = p.ev.location ? ` · ${escapeHtml(p.ev.location)}` : '';
+    h += `<div class="cal-ev" style="top:${top}px;height:${height}px;`
+       + `left:${leftPct}%;width:calc(${widthPct}% - 3px);border-left-color:${escapeAttr(p.ev.color)}" `
+       + `title="${escapeAttr(p.ev.calendar)}">`
+       + `<span class="cal-ev-time">${escapeHtml(formatTime(p.ev.start))}</span> `
+       + `<span class="cal-ev-title">${escapeHtml(p.ev.title)}${loc}</span></div>`;
+  });
+  return `<div class="cal-col">${h}</div>`;
+}
+
+/**
+ * Répartit en colonnes les événements qui se chevauchent (algo glouton par grappe).
+ * @returns {Array<{ev:Object, col:number, cols:number}>}
+ */
+function layoutDayEvents(events) {
+  const sorted = [...events].sort((a, b) => evStart(a) - evStart(b));
+  const placed = [];
+  let cluster = [];
+  let clusterEnd = null;
+
+  const flush = () => {
+    const cols = []; // chaque colonne = liste d'événements non chevauchants
+    cluster.forEach(ev => {
+      let ci = cols.findIndex(col => evStart(ev) >= evEnd(col[col.length - 1]));
+      if (ci === -1) { cols.push([ev]); ci = cols.length - 1; }
+      else cols[ci].push(ev);
+    });
+    cols.forEach((col, ci) => col.forEach(ev => placed.push({ ev, col: ci, cols: cols.length })));
+    cluster = [];
+    clusterEnd = null;
+  };
+
+  sorted.forEach(ev => {
+    if (cluster.length && evStart(ev) >= clusterEnd) flush();
+    cluster.push(ev);
+    const e = evEnd(ev);
+    clusterEnd = clusterEnd ? new Date(Math.max(clusterEnd, e)) : e;
+  });
+  flush();
+  return placed;
+}
+
+/** Fait défiler une timeline jusqu'à ~l'heure courante (lisibilité à l'ouverture). */
+function scrollTimelineToNow(scope) {
+  const tl = scope.querySelector('.cal-timeline');
+  if (tl) tl.scrollTop = Math.max(0, (new Date().getHours() - 1) * PX_PER_HOUR);
+}
+
+// ---------------------------------------------------------------------------
+//  Modale calendrier — vue SEMAINE (défaut) + bascule MOIS
+// ---------------------------------------------------------------------------
+
+/** Crée la modale une seule fois, câble ses contrôles (délégation), la renvoie. */
+function ensureCalendarModal() {
+  let dialog = document.getElementById('cal-dialog');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'cal-dialog';
+  dialog.className = 'app-dialog cal-modal';
+  dialog.innerHTML = `
+    <div class="cal-modal-head">
+      <div class="cal-nav">
+        <button type="button" class="btn-ghost cal-prev" aria-label="Précédent">‹</button>
+        <button type="button" class="btn-ghost cal-today">Aujourd'hui</button>
+        <button type="button" class="btn-ghost cal-next" aria-label="Suivant">›</button>
+      </div>
+      <h2 class="cal-modal-title" id="cal-modal-title"></h2>
+      <div class="cal-modeswitch">
+        <button type="button" class="cal-mode" data-mode="week">Semaine</button>
+        <button type="button" class="cal-mode" data-mode="month">Mois</button>
+        <button type="button" class="btn-ghost cal-close" aria-label="Fermer">✕</button>
+      </div>
+    </div>
+    <div class="cal-modal-body" id="cal-modal-body"><p class="muted">Chargement…</p></div>
+  `;
+  document.body.appendChild(dialog);
+
+  // Contrôles : navigation, bascule de mode, fermeture, clic sur un jour (vue mois).
+  dialog.addEventListener('click', (e) => {
+    const step = (calState.mode === 'week')
+      ? (n) => { calState.anchor = addDays(calState.anchor, n * 7); }
+      : (n) => { calState.anchor = addMonths(calState.anchor, n); };
+
+    if (e.target.closest('.cal-prev'))  { step(-1); renderCalendarModal(); return; }
+    if (e.target.closest('.cal-next'))  { step(1);  renderCalendarModal(); return; }
+    if (e.target.closest('.cal-today')) { calState.anchor = startOfDay(new Date()); renderCalendarModal(); return; }
+    if (e.target.closest('.cal-close')) { dialog.close(); return; }
+
+    const modeBtn = e.target.closest('.cal-mode');
+    if (modeBtn) { calState.mode = modeBtn.dataset.mode; renderCalendarModal(); return; }
+
+    const cell = e.target.closest('.cal-mc');
+    if (cell && cell.dataset.date) { // clic sur un jour en vue mois → semaine de ce jour
+      calState.anchor = parseYmd(cell.dataset.date);
+      calState.mode = 'week';
+      renderCalendarModal();
+    }
+  });
+
+  return dialog;
+}
+
+/** Ouvre la modale (semaine par défaut, ancrée sur aujourd'hui à la 1re ouverture). */
+function openCalendarModal() {
+  const dialog = ensureCalendarModal();
+  if (!calState.anchor) calState.anchor = startOfDay(new Date());
+  dialog.showModal();
+  renderCalendarModal();
+}
+
+/** (Re)calcule la plage visible, fetch les événements, rend semaine ou mois. */
+async function renderCalendarModal() {
+  const body    = document.getElementById('cal-modal-body');
+  const titleEl = document.getElementById('cal-modal-title');
+  if (!body) return;
+
+  // Onglet actif
+  document.querySelectorAll('#cal-dialog .cal-mode')
+    .forEach(b => b.classList.toggle('active', b.dataset.mode === calState.mode));
+
+  // Plage à charger selon le mode.
+  let from, to;
+  if (calState.mode === 'week') {
+    from = startOfWeek(calState.anchor);
+    to   = addDays(from, 7);
+    titleEl.textContent = weekTitle(from);
+  } else {
+    const first = new Date(calState.anchor.getFullYear(), calState.anchor.getMonth(), 1);
+    from = startOfWeek(first);
+    to   = addDays(from, 42);
+    titleEl.textContent = monthTitle(calState.anchor);
+  }
+
+  // "Aujourd'hui" : grisé tant que la période visible contient déjà aujourd'hui.
+  const todayBtn = document.querySelector('#cal-dialog .cal-today');
+  if (todayBtn) {
+    const today = startOfDay(new Date());
+    todayBtn.disabled = (today >= from && today < to);
+  }
+
+  body.innerHTML = '<p class="muted">Chargement…</p>';
+  try {
+    const res = await getCalendarRange(ymd(from), ymd(to));
+    if (!Array.isArray(res?.calendars) || res.calendars.length === 0) {
+      body.innerHTML = configGuidanceHtml();
+      return;
+    }
+    if (calState.mode === 'week') {
+      body.innerHTML = renderWeek(res, from);
+      scrollTimelineToNow(body);
+    } else {
+      body.innerHTML = renderMonth(res, calState.anchor, from);
+    }
+  } catch (err) {
+    body.innerHTML = `<p class="error">Agenda indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** "9 juin – 15 juin 2026". */
+function weekTitle(weekStart) {
+  const end = addDays(weekStart, 6);
+  return `${weekStart.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })} – `
+       + `${end.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
+}
+
+/** "Juin 2026". */
+function monthTitle(anchor) {
+  const s = anchor.toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/** Vue semaine : en-tête jours + ligne journée entière + 7 colonnes timeline. */
+function renderWeek(res, weekStart) {
+  const events  = Array.isArray(res?.data) ? res.data : [];
+  const days    = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+  const todayKey = ymd(startOfDay(new Date()));
+
+  let head = '<div class="cal-week-head"><div class="cal-corner"></div>';
+  days.forEach((d, i) => {
+    const isToday = ymd(d) === todayKey;
+    head += `<div class="cal-wday${isToday ? ' today' : ''}">`
+          + `<span class="cal-wday-name">${WEEKDAYS_SHORT[i]}</span> `
+          + `<span class="cal-wday-num">${d.getDate()}</span></div>`;
+  });
+  head += '</div>';
+
+  let allday = '<div class="cal-week-allday"><div class="cal-corner">jour.</div>';
+  days.forEach(d => { allday += `<div class="cal-wad-cell">${allDayChipsHtml(events, d)}</div>`; });
+  allday += '</div>';
+
+  let cols = '';
+  days.forEach(d => { cols += `<div class="cal-wcol">${dayColumnHtml(events, d)}</div>`; });
+
+  const grid = `<div class="cal-timeline" style="--ph:${PX_PER_HOUR}px">`
+             + `<div class="cal-week-grid">${hourGutterHtml()}${cols}</div></div>`;
+
+  return legendHtml(res.calendars) + errorsHtml(res.errors || []) + head + allday + grid;
+}
+
+/** Vue mois : 6×7 cellules, chips d'événements (max 3 + "+N"), jour cliquable. */
+function renderMonth(res, anchor, gridStart) {
+  const events   = Array.isArray(res?.data) ? res.data : [];
+  const month    = anchor.getMonth();
+  const todayKey = ymd(startOfDay(new Date()));
+
+  let html = legendHtml(res.calendars) + errorsHtml(res.errors || []);
+  html += '<div class="cal-month-head">' + WEEKDAYS_SHORT.map(w => `<div>${w}</div>`).join('') + '</div>';
+  html += '<div class="cal-month-grid">';
+
+  for (let i = 0; i < 42; i++) {
+    const d = addDays(gridStart, i);
+    const out     = d.getMonth() !== month;
+    const isToday = ymd(d) === todayKey;
+    const dayEvents = events.filter(e => occursOnDay(e, d)).sort((a, b) => evStart(a) - evStart(b));
+
+    let chips = '';
+    dayEvents.slice(0, 3).forEach(e => {
+      const t = e.all_day ? '' : `${formatTime(e.start)} `;
+      chips += `<span class="cal-mc-ev" style="border-left-color:${escapeAttr(e.color)}" `
+             + `title="${escapeAttr(e.calendar)}">${escapeHtml(t + e.title)}</span>`;
+    });
+    if (dayEvents.length > 3) chips += `<span class="cal-mc-more">+${dayEvents.length - 3}</span>`;
+
+    html += `<div class="cal-mc${out ? ' out' : ''}${isToday ? ' today' : ''}" data-date="${ymd(d)}">`
+          + `<span class="cal-mc-num">${d.getDate()}</span>${chips}</div>`;
+  }
+  html += '</div>';
+  return html;
 }
 
 /** Charge et affiche le dernier menu persistant au chargement de la vue Foyer. */

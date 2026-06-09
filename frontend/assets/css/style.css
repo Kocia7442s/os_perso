@@ -432,58 +432,156 @@ body {
 }
 .pantry-add .btn-primary { padding: 8px 14px; }
 
-/* ============ Calendrier commun (agenda iCal, lecture seule) ============ */
-.cal-legend {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin: 0 0 12px;
+/* ============ Calendrier commun (iCal, lecture seule) ============ */
+/* --- Légende / erreurs (communes carte + modale) --- */
+.cal-legend { display: flex; flex-wrap: wrap; gap: 14px; margin: 0 0 12px; }
+.cal-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; color: var(--text-muted); }
+.cal-dot { flex: 0 0 auto; width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.cal-warn { color: var(--text-muted); font-size: 0.82rem; margin: 0 0 8px; }
+
+/* --- En-tête de la carte (vue jour) --- */
+.cal-card-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 10px; margin: 0 0 10px;
 }
-.cal-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.85rem;
-  color: var(--text-muted);
+.cal-card-date { font-weight: 600; color: var(--text); font-size: 0.92rem; }
+.cal-expand { color: var(--text-muted); font-size: 0.78rem; white-space: nowrap; }
+#card-calendar .body:hover .cal-expand { color: var(--accent); }
+
+/* --- Chips "journée entière" --- */
+.cal-allday-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+.cal-allday {
+  background: var(--bg); border: 1px solid var(--card-border);
+  border-left: 3px solid var(--accent); border-radius: 6px;
+  padding: 3px 8px; font-size: 0.82rem; color: var(--text);
 }
-.cal-dot {
-  flex: 0 0 auto;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  display: inline-block;
-}
-.cal-warn {
-  color: var(--text-muted);
-  font-size: 0.82rem;
-  margin: 0 0 8px;
-}
-.cal-agenda { display: grid; gap: 14px; }
-.cal-day-title {
-  margin: 0 0 6px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-.cal-events { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
-.cal-event {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
+
+/* --- Timeline horaire (vue jour & vue semaine) --- */
+.cal-timeline {
+  max-height: 320px; overflow-y: auto;
+  border: 1px solid var(--card-border); border-radius: 10px;
   background: var(--bg);
-  border: 1px solid var(--card-border);
-  border-radius: 8px;
-  font-size: 0.9rem;
 }
-.cal-event .cal-dot { align-self: center; }
-.cal-time {
-  flex: 0 0 56px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-  font-size: 0.85rem;
+.cal-modal .cal-timeline { max-height: min(62vh, 640px); }
+
+/* Scrollbar discrète, accordée au thème (Firefox + WebKit/Chromium). */
+.cal-timeline, .cal-modal-body { scrollbar-width: thin; scrollbar-color: var(--card-border) transparent; }
+.cal-timeline::-webkit-scrollbar,
+.cal-modal-body::-webkit-scrollbar { width: 10px; height: 10px; }
+.cal-timeline::-webkit-scrollbar-track,
+.cal-modal-body::-webkit-scrollbar-track { background: transparent; }
+.cal-timeline::-webkit-scrollbar-thumb,
+.cal-modal-body::-webkit-scrollbar-thumb {
+  background: var(--card-border); border-radius: 8px;
+  border: 2px solid var(--bg); background-clip: padding-box;
 }
-.cal-title { flex: 1; min-width: 0; }
-.cal-loc { color: var(--text-muted); }
+.cal-timeline::-webkit-scrollbar-thumb:hover,
+.cal-modal-body::-webkit-scrollbar-thumb:hover { background: var(--text-muted); background-clip: padding-box; }
+.cal-timeline::-webkit-scrollbar-corner,
+.cal-modal-body::-webkit-scrollbar-corner { background: transparent; }
+
+.cal-day-grid  { display: grid; grid-template-columns: 48px 1fr; }
+.cal-week-grid { display: grid; grid-template-columns: 48px repeat(7, minmax(0, 1fr)); }
+
+/* Colonne des heures (gouttière) */
+.cal-gutter { border-right: 1px solid var(--card-border); }
+.cal-hour {
+  height: var(--ph); box-sizing: border-box;
+  border-top: 1px solid var(--card-border);
+  position: relative;
+}
+.cal-hour:first-child { border-top: 0; }
+.cal-hour span {
+  position: absolute; top: -7px; right: 6px;
+  font-size: 0.68rem; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; background: var(--bg); padding: 0 2px;
+}
+
+/* Colonne(s) jour : fond rayé toutes les heures, événements positionnés en absolu */
+.cal-col {
+  position: relative;
+  height: calc(var(--ph) * 24);
+  background-image: repeating-linear-gradient(
+    to bottom, var(--card-border) 0, var(--card-border) 1px,
+    transparent 1px, transparent var(--ph));
+}
+.cal-week-grid .cal-col { border-left: 1px solid var(--card-border); }
+
+.cal-ev {
+  position: absolute; box-sizing: border-box; overflow: hidden;
+  background: var(--accent-soft); border-radius: 5px;
+  border-left: 3px solid var(--accent);
+  padding: 2px 5px; font-size: 0.76rem; line-height: 1.25;
+  color: var(--text); cursor: default;
+}
+.cal-ev-time { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.cal-ev-title { font-weight: 500; }
+
+/* --- Modale (semaine / mois) --- */
+.cal-modal { width: min(1040px, 96vw); padding: 18px; }
+.cal-modal-body { max-height: 74vh; overflow-y: auto; }
+.cal-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.cal-nav { display: flex; gap: 6px; }
+.cal-nav .btn-ghost { padding: 6px 12px; }
+/* "Aujourd'hui" grisé quand la période affichée contient déjà aujourd'hui. */
+.cal-today:disabled { opacity: 0.4; cursor: default; }
+.cal-today:disabled:hover { color: var(--text-muted); border-color: var(--card-border); }
+.cal-modal-title { margin: 0; font-size: 1rem; font-weight: 700; flex: 1; text-align: center; min-width: 140px; }
+.cal-modeswitch { display: flex; align-items: center; gap: 6px; }
+.cal-mode {
+  background: transparent; border: 1px solid var(--card-border);
+  color: var(--text-muted); padding: 6px 14px; border-radius: 9px;
+  font-size: 0.85rem; cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.cal-mode:hover { color: var(--text); }
+.cal-mode.active { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.cal-close { padding: 6px 12px; }
+
+/* En-tête jours + ligne journée entière (vue semaine), alignés sur la grille */
+.cal-week-head, .cal-week-allday {
+  display: grid; grid-template-columns: 48px repeat(7, minmax(0, 1fr));
+}
+.cal-corner { font-size: 0.7rem; color: var(--text-muted); display: flex; align-items: center; justify-content: center; }
+.cal-wday { text-align: center; padding: 6px 2px; font-size: 0.8rem; color: var(--text-muted); }
+.cal-wday-num { font-weight: 700; color: var(--text); }
+.cal-wday.today .cal-wday-num {
+  background: var(--accent); color: #fff; border-radius: 50%;
+  padding: 1px 6px; display: inline-block;
+}
+.cal-week-allday { margin-bottom: 6px; }
+.cal-wad-cell { padding: 2px; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.cal-wad-cell .cal-allday { font-size: 0.72rem; padding: 2px 5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Vue mois */
+.cal-month-head {
+  display: grid; grid-template-columns: repeat(7, 1fr);
+  font-size: 0.76rem; color: var(--text-muted); text-align: center; margin-bottom: 4px;
+}
+.cal-month-grid {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px;
+}
+.cal-mc {
+  min-height: 92px; background: var(--bg); border: 1px solid var(--card-border);
+  border-radius: 8px; padding: 5px; display: flex; flex-direction: column; gap: 3px;
+  cursor: pointer; transition: border-color 0.15s; overflow: hidden;
+}
+.cal-mc:hover { border-color: var(--accent); }
+.cal-mc.out { opacity: 0.45; }
+.cal-mc-num { font-size: 0.78rem; color: var(--text-muted); align-self: flex-start; }
+.cal-mc.today .cal-mc-num {
+  background: var(--accent); color: #fff; border-radius: 50%;
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+}
+.cal-mc-ev {
+  font-size: 0.72rem; color: var(--text); background: var(--card-bg);
+  border-left: 3px solid var(--accent); border-radius: 4px; padding: 1px 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cal-mc-more { font-size: 0.7rem; color: var(--text-muted); padding-left: 2px; }
+
+@media (max-width: 768px) {
+  .cal-modal-title { order: 3; flex-basis: 100%; }
+}

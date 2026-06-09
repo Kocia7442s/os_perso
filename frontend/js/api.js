@@ -153,6 +153,16 @@ export function getCalendarEvents(days = 60) {
 }
 
 /**
+ * Agenda fusionné sur une plage explicite (navigation semaine / mois).
+ * @param {string} from date de début incluse, format "AAAA-MM-JJ".
+ * @param {string} to   date de fin exclue, format "AAAA-MM-JJ".
+ * @returns {Promise<Object>} même forme que getCalendarEvents.
+ */
+export function getCalendarRange(from, to) {
+  return apiGet(`/calendrier/events?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+}
+
+/**
  * Récupère les préférences du foyer (GET /backend/foyer/preferences).
  * @returns {Promise<Object>} { status, data: { household_size, veggie_meals, max_pasta, avoid } }
  */

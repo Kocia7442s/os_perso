@@ -15,10 +15,31 @@ $method = $_SERVER['REQUEST_METHOD'];
 
 switch ("{$method} {$action}") {
 
-    // ---- GET /backend/calendrier/events?days=60 : agenda fusionné ----
+    // ---- GET /backend/calendrier/events : agenda fusionné ----
+    //   ?days=60                     → fenêtre de N jours à partir d'aujourd'hui
+    //   ?from=AAAA-MM-JJ&to=AAAA-MM-JJ → plage explicite (navigation semaine/mois)
     case 'GET events':
-        $days = isset($_GET['days']) ? (int) $_GET['days'] : 60;
-        $result = (new Calendar())->getEvents($days);
+        $cal  = new Calendar();
+        $from = isset($_GET['from']) ? trim((string) $_GET['from']) : '';
+        $to   = isset($_GET['to'])   ? trim((string) $_GET['to'])   : '';
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $from) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $to)) {
+            $tz   = new DateTimeZone(date_default_timezone_get());
+            $dFrom = new DateTimeImmutable($from . ' 00:00:00', $tz);
+            $dTo   = new DateTimeImmutable($to   . ' 00:00:00', $tz);
+            // Garde-fou : on borne l'amplitude (max ~120 jours) et l'ordre.
+            if ($dTo <= $dFrom) {
+                $dTo = $dFrom->add(new DateInterval('P1D'));
+            }
+            if ($dTo->diff($dFrom)->days > 120) {
+                $dTo = $dFrom->add(new DateInterval('P120D'));
+            }
+            $result = $cal->getEventsBetween($dFrom, $dTo);
+        } else {
+            $days   = isset($_GET['days']) ? (int) $_GET['days'] : 60;
+            $result = $cal->getEvents($days);
+        }
+
         respond(200, [
             'status'    => 'success',
             'count'     => count($result['events']),
