@@ -316,3 +316,29 @@ export function getBudgets(month) {
 export function setBudget(categorie, montant) {
   return apiSend('POST', '/finances/budgets', { categorie, montant });
 }
+
+/* ----- Patrimoine : comptes & valeur nette (Phase 2) ----- */
+
+/**
+ * Comptes + synthèse patrimoine (GET /finances/comptes).
+ * @returns {Promise<Object>} { status, data: { comptes:[{id,nom,type,solde,est_dette}],
+ *          resume:{actifs,dettes,valeur_nette,allocation:[{type,montant}]} } }
+ */
+export function getAccounts() {
+  return apiGet('/finances/comptes');
+}
+
+/** Ajoute un compte (POST /finances/comptes). */
+export function addAccount(compte) {
+  return apiSend('POST', '/finances/comptes', compte);
+}
+
+/** Met à jour un compte (PUT /finances/comptes/{id}). */
+export function updateAccount(id, fields) {
+  return apiSend('PUT', `/finances/comptes/${id}`, fields);
+}
+
+/** Supprime un compte (DELETE /finances/comptes/{id}). */
+export function deleteAccount(id) {
+  return apiSend('DELETE', `/finances/comptes/${id}`);
+}

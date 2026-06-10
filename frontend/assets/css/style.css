@@ -980,3 +980,44 @@ body {
 }
 .budgets-row > span { flex: 1; }
 .budgets-row input { width: 120px; text-align: right; }
+
+/* Carte Patrimoine — liste des comptes. */
+.acct-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.acct-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.acct-name { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.acct-type {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  background: var(--surface);
+  border-radius: 5px;
+  padding: 1px 6px;
+  width: max-content;
+}
+.acct-solde { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.acct-solde.revenu  { color: var(--text); }
+.acct-solde.depense { color: var(--danger); }
+.acct-edit, .acct-del {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: color 0.15s, background 0.15s, opacity 0.15s;
+}
+.acct-edit:hover { color: var(--accent); background: var(--surface); opacity: 1; }
+.acct-del:hover  { color: var(--danger); background: var(--surface); opacity: 1; }
+.acct-del:disabled { opacity: 0.4; cursor: progress; }

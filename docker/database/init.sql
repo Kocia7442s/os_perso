@@ -112,3 +112,14 @@ CREATE TABLE IF NOT EXISTS finance_budgets (
     PRIMARY KEY (id),
     UNIQUE KEY uniq_budget_cat (categorie)               -- 1 budget par catégorie
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Phase 2 — Patrimoine : comptes & valeur nette (saisie manuelle des soldes).
+-- Valeur nette = Σ(soldes hors dette) − Σ(soldes des dettes).
+CREATE TABLE IF NOT EXISTS finance_accounts (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    nom        VARCHAR(120)  NOT NULL,                   -- ex : "Livret A", "PEA Boursorama"
+    type       VARCHAR(30)   NOT NULL DEFAULT 'Courant', -- Courant|Épargne|Investissement|Crypto|Immobilier|Dette|Autre
+    solde      DECIMAL(12,2) NOT NULL DEFAULT 0,         -- solde courant (signé ; dette = montant dû positif)
+    updated_at TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

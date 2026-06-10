@@ -10,6 +10,7 @@
 require_once __DIR__ . '/Transactions.php';
 require_once __DIR__ . '/FinanceSummary.php';
 require_once __DIR__ . '/Budgets.php';
+require_once __DIR__ . '/Accounts.php';
 
 $action = $segments[1] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
@@ -92,11 +93,52 @@ switch ("{$method} {$action}") {
         respond(200, [
             'status' => 'success',
             'data'   => [
-                'categories' => Transactions::CATEGORIES,
-                'types'      => Transactions::TYPES,
-                'qui'        => Transactions::QUI,
+                'categories'    => Transactions::CATEGORIES,
+                'types'         => Transactions::TYPES,
+                'qui'           => Transactions::QUI,
+                'account_types' => Accounts::TYPES,
             ],
         ]);
+        break;
+
+    // ---- GET /backend/finances/comptes : comptes + synthèse patrimoine ----
+    case 'GET comptes':
+        respond(200, ['status' => 'success', 'data' => (new Accounts())->overview()]);
+        break;
+
+    // ---- POST /backend/finances/comptes : ajouter un compte ----
+    case 'POST comptes':
+        $body    = json_decode(file_get_contents('php://input'), true) ?? [];
+        $compte  = (new Accounts())->add($body);
+        if ($compte === null) {
+            respond(400, ['status' => 'error',
+                'message' => 'Compte invalide : un nom et un solde numérique sont requis.']);
+        }
+        respond(201, ['status' => 'success', 'data' => $compte]);
+        break;
+
+    // ---- PUT /backend/finances/comptes/{id} : modifier un compte ----
+    case 'PUT comptes':
+        $id     = (int) ($segments[2] ?? 0);
+        $body   = json_decode(file_get_contents('php://input'), true) ?? [];
+        $accts  = new Accounts();
+        $compte = $accts->update($id, $body);
+        if ($compte === null) {
+            if ($accts->get($id) === null) {
+                respond(404, ['status' => 'error', 'message' => "Compte #{$id} introuvable."]);
+            }
+            respond(400, ['status' => 'error', 'message' => 'Valeur fournie invalide (nom ou solde).']);
+        }
+        respond(200, ['status' => 'success', 'data' => $compte]);
+        break;
+
+    // ---- DELETE /backend/finances/comptes/{id} : supprimer un compte ----
+    case 'DELETE comptes':
+        $id = (int) ($segments[2] ?? 0);
+        if (!(new Accounts())->delete($id)) {
+            respond(404, ['status' => 'error', 'message' => "Compte #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'message' => 'Compte supprimé.']);
         break;
 
     // ---- Action inconnue dans le module Finances ----

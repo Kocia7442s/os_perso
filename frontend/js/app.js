@@ -15,7 +15,8 @@ import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal, addMeal,
          getCalendarEvents, getCalendarRange,
          getTransactions, addTransaction, updateTransaction, deleteTransaction,
          getFinanceSummary, getFinanceCategories,
-         getBudgets, setBudget } from './api.js';   // couche réseau
+         getBudgets, setBudget,
+         getAccounts, addAccount, updateAccount, deleteAccount } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -88,6 +89,14 @@ const VIEWS = {
         ` },
       { title: 'Transactions', icon: '📋', span: 2, id: 'card-fin-list',
         body: '<div id="fin-list"><p class="muted">Chargement…</p></div>' },
+      { title: 'Patrimoine', icon: '🏦', span: 2, id: 'card-fin-patrimoine',
+        body: `
+          <button class="card-action" slot="actions" id="btn-fin-account"
+                  title="Ajouter un compte" aria-label="Ajouter un compte">➕</button>
+          <div id="fin-patrimoine"><p class="muted">Chargement…</p></div>
+        ` },
+      { title: 'Allocation', icon: '🥧', id: 'card-fin-alloc',
+        body: '<div id="fin-alloc"><p class="muted">Chargement…</p></div>' },
     ],
   },
 };
@@ -1563,9 +1572,11 @@ function openMealDialog(prefill = {}) {
 // ===========================================================================
 
 const financeState = {
-  month: null, // "AAAA-MM" affiché
-  meta:  null, // { categories:{depense:[],revenu:[]}, types:[], qui:[] } (cache)
-  chart: null, // instance Chart.js du donut (à détruire avant re-render)
+  month:     null, // "AAAA-MM" affiché
+  meta:      null, // { categories, types, qui, account_types } (cache)
+  chart:     null, // donut "Répartition" des dépenses (à détruire avant re-render)
+  allocChart: null, // donut "Allocation" du patrimoine
+  accounts:  [],   // dernier overview des comptes (pour l'édition)
 };
 
 const QUI_LABELS = { moi: 'Moi', partenaire: 'Partenaire', commun: 'Commun' };
@@ -1633,9 +1644,15 @@ async function initFinancesView() {
   loadFinanceMonth();   // summary → carte "Ce mois-ci" + donut
   loadFinanceList();    // transactions du mois
   loadFinanceBudgets(); // budgets + progression du mois
+  loadPatrimoine();     // comptes + valeur nette + allocation
 
   const budgetsBtn = document.getElementById('btn-fin-budgets');
   if (budgetsBtn) budgetsBtn.addEventListener('click', openBudgetsDialog);
+
+  const accountBtn = document.getElementById('btn-fin-account');
+  if (accountBtn) accountBtn.addEventListener('click', () => openAccountDialog());
+
+  initPatrimoineInteractions();
 }
 
 /** Construit le formulaire de saisie rapide (dépend des catégories chargées). */
@@ -1989,6 +2006,210 @@ async function openBudgetsDialog() {
     + `<input type="text" inputmode="decimal" data-cat="${escapeAttr(c)}" `
     + `value="${current[c] != null ? current[c] : ''}" placeholder="—">`
     + `</label>`).join('');
+}
+
+// ---------------------------------------------------------------------------
+//  Patrimoine — comptes & valeur nette (Phase 2)
+// ---------------------------------------------------------------------------
+
+/** Charge la carte Patrimoine (comptes + valeur nette) et le donut d'allocation. */
+async function loadPatrimoine() {
+  const host = document.getElementById('fin-patrimoine');
+  if (!host) return;
+  try {
+    const { data } = await getAccounts();
+    financeState.accounts = data.comptes || [];
+    host.innerHTML = renderPatrimoine(data);
+    renderAllocationChart(data.resume?.allocation || []);
+  } catch (err) {
+    host.innerHTML = `<p class="error">Patrimoine indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Carte Patrimoine : valeur nette + actifs/dettes + liste des comptes. */
+function renderPatrimoine(data) {
+  const r = data.resume;
+  const comptes = data.comptes || [];
+  const netCls = r.valeur_nette >= 0 ? 'pos' : 'neg';
+
+  const head = `
+    <p class="fin-solde-lbl">Valeur nette</p>
+    <div class="fin-solde ${netCls}">${fmtEUR(r.valeur_nette)}</div>
+    <div class="fin-totaux">
+      <span class="fin-rev">Actifs<br><strong>${fmtEUR(r.actifs)}</strong></span>
+      <span class="fin-dep">Dettes<br><strong>${fmtEUR(r.dettes)}</strong></span>
+    </div>`;
+
+  if (!comptes.length) {
+    return head + '<p class="muted" style="margin-top:14px">Aucun compte. Touche ➕ pour en ajouter.</p>';
+  }
+
+  const rows = comptes.map(c => {
+    const soldeCls = c.est_dette ? 'depense' : (c.solde < 0 ? 'depense' : 'revenu');
+    const sign = c.est_dette ? '− ' : '';
+    return `<li class="acct-row" data-id="${c.id}">`
+      + `<span class="acct-name">${escapeHtml(c.nom)}<span class="acct-type">${escapeHtml(c.type)}</span></span>`
+      + `<span class="acct-solde ${soldeCls}">${sign}${fmtEUR(c.solde)}</span>`
+      + `<button type="button" class="acct-edit" data-id="${c.id}" title="Modifier" aria-label="Modifier">✎</button>`
+      + `<button type="button" class="acct-del" data-id="${c.id}" title="Supprimer" aria-label="Supprimer">✕</button>`
+      + `</li>`;
+  }).join('');
+
+  return head + `<h4 class="fin-sub">Mes comptes</h4><ul class="acct-list">${rows}</ul>`;
+}
+
+/** Donut Chart.js de l'allocation du patrimoine par type (actifs). */
+async function renderAllocationChart(allocation) {
+  const host = document.getElementById('fin-alloc');
+  if (!host) return;
+
+  if (financeState.allocChart) { financeState.allocChart.destroy(); financeState.allocChart = null; }
+
+  if (!allocation.length) {
+    host.innerHTML = '<p class="muted">Aucun actif à répartir.</p>';
+    return;
+  }
+
+  host.innerHTML = '<div class="fin-chart-wrap"><canvas id="fin-alloc-donut"></canvas></div>';
+  try {
+    const Chart  = await ensureChartJs();
+    const canvas = document.getElementById('fin-alloc-donut');
+    if (!canvas) return;
+    financeState.allocChart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: allocation.map(a => a.type),
+        datasets: [{ data: allocation.map(a => a.montant), backgroundColor: FIN_COLORS, borderWidth: 0 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#e4e7ef', boxWidth: 12, padding: 10 } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.label} : ${fmtEUR(ctx.parsed)}` } },
+        },
+      },
+    });
+  } catch (err) {
+    host.innerHTML = `<p class="error">Graphique indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Délégation des clics de la carte Patrimoine (modifier / supprimer un compte). */
+function initPatrimoineInteractions() {
+  const host = document.getElementById('fin-patrimoine');
+  if (!host) return;
+
+  host.addEventListener('click', async (e) => {
+    const editBtn = e.target.closest('.acct-edit');
+    if (editBtn) {
+      const acct = financeState.accounts.find(a => a.id === Number(editBtn.dataset.id));
+      if (acct) openAccountDialog(acct);
+      return;
+    }
+    const delBtn = e.target.closest('.acct-del');
+    if (delBtn) {
+      delBtn.disabled = true;
+      try {
+        await deleteAccount(Number(delBtn.dataset.id));
+        loadPatrimoine();
+      } catch (err) {
+        console.error('Suppression compte échouée :', err.message);
+        delBtn.disabled = false;
+      }
+    }
+  });
+}
+
+/** Crée (une fois) la modale d'ajout / édition de compte. */
+function ensureAccountDialog() {
+  let dialog = document.getElementById('account-dialog');
+  if (dialog) return dialog;
+
+  const types = financeState.meta?.account_types || ['Courant', 'Autre'];
+  dialog = document.createElement('dialog');
+  dialog.id = 'account-dialog';
+  dialog.className = 'app-dialog';
+  dialog.innerHTML = `
+    <form id="account-form" method="dialog">
+      <h2 class="dialog-title" id="account-title">Ajouter un compte</h2>
+      <label class="field"><span>Nom du compte</span>
+        <input type="text" name="nom" maxlength="120" placeholder="ex : Livret A" autocomplete="off" required>
+      </label>
+      <div class="fin-form-grid">
+        <label class="field"><span>Type</span>
+          <select name="type">${types.map(t => `<option value="${escapeAttr(t)}">${escapeHtml(t)}</option>`).join('')}</select>
+        </label>
+        <label class="field"><span>Solde (€)</span>
+          <input type="text" name="solde" inputmode="decimal" placeholder="0,00" autocomplete="off" required>
+        </label>
+      </div>
+      <p class="dialog-hint">Une « Dette » se saisit en positif (montant dû) et se soustrait de la valeur nette.</p>
+      <p class="dialog-error" id="account-error" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="account-cancel">Annuler</button>
+        <button type="submit" class="btn-primary" id="account-save">Enregistrer</button>
+      </div>
+    </form>`;
+  document.body.appendChild(dialog);
+  // .fin-form-grid attend ce conteneur pour styler ses champs comme le form de saisie.
+  dialog.querySelector('#account-form').classList.add('fin-form');
+
+  dialog.querySelector('#account-cancel').addEventListener('click', () => dialog.close());
+
+  dialog.querySelector('#account-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form    = e.target;
+    const saveBtn = form.querySelector('#account-save');
+    const errEl   = form.querySelector('#account-error');
+    const id      = form.dataset.editId ? Number(form.dataset.editId) : null;
+    const payload = {
+      nom:   form.elements.nom.value.trim(),
+      type:  form.elements.type.value,
+      solde: form.elements.solde.value,
+    };
+    errEl.hidden = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Enregistrement…';
+    try {
+      if (id) await updateAccount(id, payload);
+      else    await addAccount(payload);
+      dialog.close();
+      loadPatrimoine();
+    } catch (err) {
+      errEl.textContent = `Échec : ${err.message}`;
+      errEl.hidden = false;
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Enregistrer';
+    }
+  });
+
+  return dialog;
+}
+
+/** Ouvre la modale compte, en mode ajout (account = null) ou édition. */
+function openAccountDialog(account = null) {
+  const dialog = ensureAccountDialog();
+  const form   = dialog.querySelector('#account-form');
+  document.getElementById('account-title').textContent =
+    account ? 'Modifier le compte' : 'Ajouter un compte';
+
+  if (account) {
+    form.dataset.editId    = account.id;
+    form.elements.nom.value   = account.nom;
+    form.elements.type.value  = account.type;
+    form.elements.solde.value = account.solde;
+  } else {
+    delete form.dataset.editId;
+    form.elements.nom.value   = '';
+    form.elements.type.value  = (financeState.meta?.account_types || ['Courant'])[0];
+    form.elements.solde.value = '';
+  }
+  document.getElementById('account-error').hidden = true;
+  dialog.showModal();
+  form.elements.nom.focus();
 }
 
 // ---------------------------------------------------------------------------
