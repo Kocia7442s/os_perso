@@ -1,5 +1,5 @@
 # =========================================================
-#  OS Perso — Routeur frontal de l'API
+#  SCADA — Routeur frontal de l'API
 #  Toutes les requêtes vers /backend/... sont redirigées vers
 #  index.php, qui joue le rôle de point d'entrée unique (front controller).
 # =========================================================

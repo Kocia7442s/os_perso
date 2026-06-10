@@ -61,7 +61,7 @@ try {
         case '':
             respond(200, [
                 'status'  => 'success',
-                'message' => 'API OS Perso opérationnelle.',
+                'message' => 'API SCADA opérationnelle.',
                 'version' => '0.1.0',
             ]);
             break;

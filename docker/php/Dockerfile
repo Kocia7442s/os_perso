@@ -1,5 +1,5 @@
 # =========================================================
-#  OS Perso — Image PHP/Apache personnalisée
+#  SCADA — Image PHP/Apache personnalisée
 #  But : partir de l'image officielle et y ajouter PDO MySQL,
 #        indispensable pour que PHP parle à MariaDB.
 # =========================================================

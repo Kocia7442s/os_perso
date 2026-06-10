@@ -1,5 +1,5 @@
 -- =========================================================
---  OS Perso — Initialisation de la base de données
+--  SCADA — Initialisation de la base de données
 --
 --  Ce script est joué AUTOMATIQUEMENT par MariaDB, mais UNIQUEMENT
 --  au tout premier démarrage du conteneur (quand le volume de données
