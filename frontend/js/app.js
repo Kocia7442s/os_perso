@@ -30,12 +30,6 @@ const VIEWS = {
         body: '<div id="today-result"><p class="muted">Chargement…</p></div>' },
       { title: 'État du système', icon: '🩺', span: 2, id: 'system-status',
         body: '<p class="muted">Connexion à l\'API…</p>' },
-      { title: 'Liste de courses', icon: '🛒',
-        body: '<p class="muted">Module Foyer — bientôt connecté à la BDD.</p>' },
-      { title: 'Domotique',       icon: '💡',
-        body: '<p class="muted">Capteurs Zigbee — à venir.</p>' },
-      { title: 'Chiffre d\'affaires', icon: '📈',
-        body: '<p class="muted">Suivi auto-entrepreneur — à venir.</p>' },
     ],
   },
   foyer: {
