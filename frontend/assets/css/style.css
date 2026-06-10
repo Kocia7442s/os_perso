@@ -238,6 +238,26 @@ body {
   background: rgba(81, 216, 138, 0.12);
 }
 
+/* Barre d'actions au-dessus du menu (Générer / Ajouter). */
+.menu-toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+
+/* Bouton ✕ "retirer ce repas" (par ligne de menu). */
+.meal-del {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: color 0.15s, background 0.15s, opacity 0.15s;
+}
+.meal-del:hover { color: var(--danger); background: var(--bg); opacity: 1; }
+.meal-del:disabled { opacity: 0.4; cursor: progress; }
+
 .menu-notif {
   margin: 16px 0 0;
   padding: 10px 12px;
@@ -333,7 +353,8 @@ body {
 .field > span { color: var(--text-muted); }
 
 .app-dialog input,
-.app-dialog textarea {
+.app-dialog textarea,
+.app-dialog select {
   background: var(--bg);
   border: 1px solid var(--card-border);
   border-radius: 8px;
@@ -344,10 +365,16 @@ body {
   resize: vertical;
 }
 .app-dialog input:focus,
-.app-dialog textarea:focus {
+.app-dialog textarea:focus,
+.app-dialog select:focus {
   outline: 2px solid var(--accent-soft);
   border-color: var(--accent);
 }
+
+/* Deux champs côte à côte (jour + moment) dans la modale d'ajout de repas. */
+.meal-form-row { display: flex; gap: 12px; }
+.meal-form-row .field { flex: 1; }
+.dialog-hint { color: var(--text-muted); font-size: 0.8rem; margin: 2px 0 0; }
 
 .dialog-actions {
   display: flex;

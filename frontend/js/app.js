@@ -8,7 +8,7 @@
 // =========================================================
 
 import '../components/bento-card.js';        // enregistre <bento-card>
-import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal, getRecipe, generateRecipe,
+import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal, addMeal, deleteMeal, getRecipe, generateRecipe,
          getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem, stockBoughtItem,
          getPantry, addPantryItem, updatePantryItem, deletePantryItem,
          getPreferences, savePreferences,
@@ -45,7 +45,10 @@ const VIEWS = {
         body: `
           <button class="card-action" slot="actions" id="btn-menu-settings"
                   title="Réglages du menu" aria-label="Réglages du menu">⚙️</button>
-          <button id="btn-generate-menu" class="btn-primary">Générer le menu (IA)</button>
+          <div class="menu-toolbar">
+            <button id="btn-generate-menu" class="btn-primary">Générer le menu (IA)</button>
+            <button id="btn-add-meal" class="btn-ghost">➕ Ajouter un repas</button>
+          </div>
           <div id="menu-result"></div>
         ` },
       { title: 'Liste de courses', icon: '🛒', id: 'card-shopping',
@@ -145,6 +148,9 @@ function initFoyerView() {
 
   const settingsBtn = document.getElementById('btn-menu-settings');
   if (settingsBtn) settingsBtn.addEventListener('click', openPrefsDialog);
+
+  const addMealBtn = document.getElementById('btn-add-meal');
+  if (addMealBtn) addMealBtn.addEventListener('click', () => openMealDialog());
 
   // Affiche d'emblée le dernier menu enregistré (sans rappeler l'IA).
   loadCurrentMenu();
@@ -1061,6 +1067,21 @@ function initMenuInteractions() {
     const recipeBtn = e.target.closest('.meal-recipe');
     if (recipeBtn) { openRecipeModal(Number(recipeBtn.dataset.id)); return; }
 
+    // Clic sur ✕ → retire le repas du plan (manuel).
+    const delBtn = e.target.closest('.meal-del');
+    if (delBtn) {
+      delBtn.disabled = true;
+      try {
+        await deleteMeal(Number(delBtn.dataset.id));
+        await loadCurrentMenu();
+        loadTodaySummary(); // rafraîchit le Dashboard si la carte y est affichée (no-op sinon)
+      } catch (err) {
+        console.error('Suppression de repas échouée :', err.message);
+        delBtn.disabled = false;
+      }
+      return;
+    }
+
     const btn = e.target.closest('.meal-cook');
     if (!btn) return;
     const id = Number(btn.dataset.id);
@@ -1270,7 +1291,13 @@ function renderMenu(data) {
 
   // --- Soirs de la semaine (Lundi -> Vendredi) ---
   let html = '<div class="menu-block"><h3 class="menu-title">🌙 Soirs de la semaine</h3><ul class="menu-list">';
-  enSemaine.forEach(j => { html += mealRow(j.jour, j.repas?.soir); });
+  enSemaine.forEach(j => {
+    // En semaine on n'attend que le soir, mais un midi ajouté manuellement
+    // doit rester visible (sinon il serait enregistré mais invisible).
+    const hasMidi = !!j.repas?.midi;
+    if (hasMidi) html += mealRow(`${j.jour} midi`, j.repas.midi);
+    html += mealRow(hasMidi ? `${j.jour} soir` : j.jour, j.repas?.soir);
+  });
   html += '</ul></div>';
 
   // --- Week-end (midi + soir) ---
@@ -1313,8 +1340,13 @@ function mealRow(label, meal) {
     ? `<button type="button" class="menu-meal meal-recipe" data-id="${m.id}" `
       + `title="Voir la recette">${escapeHtml(m.nom)}</button>`
     : `<span class="menu-meal">${escapeHtml(m.nom)}</span>`;
+  // Retrait manuel du repas (✕).
+  const del = (m.id != null)
+    ? `<button type="button" class="meal-del" data-id="${m.id}" `
+      + `title="Retirer ce repas" aria-label="Retirer ce repas">✕</button>`
+    : '';
   return `<li class="menu-item${cookedCls}"><span class="menu-day">${escapeHtml(label)}</span>`
-       + `${mealHtml}${btn}</li>`;
+       + `${mealHtml}${btn}${del}</li>`;
 }
 
 /** Échappe le HTML — le contenu vient d'un LLM, on ne l'injecte jamais brut. */
@@ -1426,6 +1458,94 @@ async function openPrefsDialog() {
   }
 
   dialog.showModal();
+}
+
+// ---------------------------------------------------------------------------
+//  Ajout / modification manuelle d'un repas — modale (sans IA)
+// ---------------------------------------------------------------------------
+
+const MEAL_DAYS = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+
+/** Crée (une fois) la modale d'ajout de repas et câble ses interactions. */
+function ensureMealDialog() {
+  let dialog = document.getElementById('meal-dialog');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'meal-dialog';
+  dialog.className = 'app-dialog';
+  const dayOpts = MEAL_DAYS.map(d => `<option value="${d}">${d}</option>`).join('');
+  dialog.innerHTML = `
+    <form id="meal-form" method="dialog">
+      <h2 class="dialog-title">➕ Ajouter / modifier un repas</h2>
+      <div class="meal-form-row">
+        <label class="field">
+          <span>Jour</span>
+          <select name="jour" required>${dayOpts}</select>
+        </label>
+        <label class="field">
+          <span>Moment</span>
+          <select name="type" required>
+            <option value="soir">Soir</option>
+            <option value="midi">Midi</option>
+          </select>
+        </label>
+      </div>
+      <label class="field">
+        <span>Plat</span>
+        <input type="text" name="nom" maxlength="200" required
+               placeholder="ex : Raclette" autocomplete="off">
+      </label>
+      <p class="dialog-hint">Un plat existant pour ce créneau sera remplacé.</p>
+      <p class="dialog-error" id="meal-error" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="meal-cancel">Annuler</button>
+        <button type="submit" class="btn-primary" id="meal-save">Ajouter</button>
+      </div>
+    </form>
+  `;
+  document.body.appendChild(dialog);
+
+  dialog.querySelector('#meal-cancel').addEventListener('click', () => dialog.close());
+
+  dialog.querySelector('#meal-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const form    = e.target;
+    const saveBtn = form.querySelector('#meal-save');
+    const errorEl = form.querySelector('#meal-error');
+    const nom     = form.nom.value.trim();
+    if (!nom) return;
+
+    errorEl.hidden = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Ajout…';
+    try {
+      await addMeal(form.jour.value, form.type.value, nom);
+      dialog.close();
+      await loadCurrentMenu();
+      loadTodaySummary(); // rafraîchit le Dashboard si présent (no-op sinon)
+    } catch (err) {
+      errorEl.textContent = `Échec : ${err.message}`;
+      errorEl.hidden = false;
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Ajouter';
+    }
+  });
+
+  return dialog;
+}
+
+/** Ouvre la modale d'ajout, éventuellement pré-remplie (jour/moment/nom). */
+function openMealDialog(prefill = {}) {
+  const dialog = ensureMealDialog();
+  const form   = dialog.querySelector('#meal-form');
+  form.jour.value = MEAL_DAYS.includes(prefill.jour) ? prefill.jour : MEAL_DAYS[0];
+  form.type.value = prefill.type === 'midi' ? 'midi' : 'soir';
+  form.nom.value  = prefill.nom ?? '';
+  document.getElementById('meal-error').hidden = true;
+  dialog.showModal();
+  form.nom.focus();
 }
 
 // ---------------------------------------------------------------------------

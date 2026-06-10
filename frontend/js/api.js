@@ -125,6 +125,27 @@ export function cookMeal(id, cooked) {
 }
 
 /**
+ * Ajoute ou remplace manuellement un repas du plan (POST /foyer/meal, sans IA).
+ * Un seul plat par créneau jour+moment : si le créneau existe, son nom est remplacé.
+ * @param {string} jour  ex. "Lundi" … "Dimanche".
+ * @param {string} type  "midi" ou "soir".
+ * @param {string} nom   nom du plat.
+ * @returns {Promise<Object>} { status, data: { id, jour, type, nom, cooked } }
+ */
+export function addMeal(jour, type, nom) {
+  return apiSend('POST', '/foyer/meal', { jour, type, nom });
+}
+
+/**
+ * Retire un repas du plan (DELETE /foyer/meal/{id}).
+ * @param {number} id identifiant du repas (weekly_plan).
+ * @returns {Promise<Object>} { status, message }
+ */
+export function deleteMeal(id) {
+  return apiSend('DELETE', `/foyer/meal/${id}`);
+}
+
+/**
  * Récupère la liste de courses (GET /backend/foyer/shopping).
  * @returns {Promise<Object>} { status, data: [ { id, nom, achete }, ... ] }
  */

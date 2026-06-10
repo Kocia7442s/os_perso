@@ -411,6 +411,96 @@ JSON;
     }
 
     // ---------------------------------------------------------------------
+    //  Édition manuelle du plan (sans IA) : ajouter / remplacer / retirer
+    // ---------------------------------------------------------------------
+
+    /** Jours valides du plan (doivent matcher ce que produit la génération IA). */
+    public const VALID_DAYS  = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
+    /** Moments de repas valides. */
+    public const VALID_TYPES = ['midi', 'soir'];
+
+    /**
+     * Ajoute ou remplace manuellement un repas (1 plat par créneau jour+moment).
+     * Aucune IA. Si le créneau existe déjà, on remplace le nom et on repart à zéro
+     * (cooked=0, recette + ingrédients effacés : c'est un autre plat).
+     *
+     * @return array{id:int,jour:string,type:string,nom:string,cooked:bool}|null
+     *         null si l'entrée est invalide (nom vide, jour/moment hors liste).
+     */
+    public function setMeal(string $jour, string $type, string $nom): ?array
+    {
+        $jour = trim($jour);
+        $type = strtolower(trim($type));
+        $nom  = trim($nom);
+        if ($nom === ''
+            || !in_array($jour, self::VALID_DAYS, true)
+            || !in_array($type, self::VALID_TYPES, true)) {
+            return null;
+        }
+
+        $pdo = $this->db->getConnection();
+        $pdo->beginTransaction();
+        try {
+            $existing = $this->db->query(
+                'SELECT id FROM weekly_plan WHERE day_of_week = :j AND meal_type = :t LIMIT 1',
+                [':j' => $jour, ':t' => $type]
+            )->fetch();
+
+            if ($existing) {
+                $id = (int) $existing['id'];
+                $this->db->query(
+                    'UPDATE weekly_plan SET meal_name = :nom, cooked = 0, recipe = NULL WHERE id = :id',
+                    [':nom' => $nom, ':id' => $id]
+                );
+                // Le plat change → ses anciens ingrédients ne valent plus rien.
+                $this->db->query(
+                    'DELETE FROM meal_ingredients WHERE weekly_plan_id = :id',
+                    [':id' => $id]
+                );
+            } else {
+                $this->db->query(
+                    'INSERT INTO weekly_plan (day_of_week, meal_type, meal_name) VALUES (:j, :t, :nom)',
+                    [':j' => $jour, ':t' => $type, ':nom' => $nom]
+                );
+                $id = (int) $pdo->lastInsertId();
+            }
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+        return ['id' => $id, 'jour' => $jour, 'type' => $type, 'nom' => $nom, 'cooked' => false];
+    }
+
+    /**
+     * Retire un repas du plan (et ses ingrédients). N'archive rien dans l'historique.
+     * @return bool false si l'id n'existe pas.
+     */
+    public function deleteMeal(int $id): bool
+    {
+        $row = $this->db->query(
+            'SELECT id FROM weekly_plan WHERE id = :id',
+            [':id' => $id]
+        )->fetch();
+        if (!$row) {
+            return false;
+        }
+
+        $pdo = $this->db->getConnection();
+        $pdo->beginTransaction();
+        try {
+            $this->db->query('DELETE FROM meal_ingredients WHERE weekly_plan_id = :id', [':id' => $id]);
+            $this->db->query('DELETE FROM weekly_plan WHERE id = :id', [':id' => $id]);
+            $pdo->commit();
+        } catch (Throwable $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+        return true;
+    }
+
+    // ---------------------------------------------------------------------
     //  Prompt engineering : on EXIGE un JSON strict, sans fioritures
     // ---------------------------------------------------------------------
 

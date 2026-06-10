@@ -97,6 +97,32 @@ switch ("{$method} {$action}") {
         ]);
         break;
 
+    // ---- POST /backend/foyer/meal : ajouter / remplacer un repas (manuel, sans IA) ----
+    //      Body { jour, type:"midi"|"soir", nom }. 1 plat par créneau jour+moment :
+    //      si le créneau existe, on remplace le nom (et on repart à zéro).
+    case 'POST meal':
+        $body = json_decode(file_get_contents('php://input'), true) ?? [];
+        $meal = $generator->setMeal(
+            (string) ($body['jour'] ?? ''),
+            (string) ($body['type'] ?? ''),
+            (string) ($body['nom'] ?? '')
+        );
+        if ($meal === null) {
+            respond(400, ['status' => 'error',
+                'message' => "Repas invalide : un jour valide, un moment ('midi' ou 'soir') et un nom sont requis."]);
+        }
+        respond(201, ['status' => 'success', 'data' => $meal]);
+        break;
+
+    // ---- DELETE /backend/foyer/meal/{id} : retirer un repas du plan ----
+    case 'DELETE meal':
+        $id = (int) ($segments[2] ?? 0);
+        if (!$generator->deleteMeal($id)) {
+            respond(404, ['status' => 'error', 'message' => "Repas #{$id} introuvable."]);
+        }
+        respond(200, ['status' => 'success', 'message' => 'Repas retiré du plan.']);
+        break;
+
     // ---- GET /backend/foyer/recipe/{id} : recette d'un plat (cache, sans IA) ----
     case 'GET recipe':
         $id   = (int) ($segments[2] ?? 0);
