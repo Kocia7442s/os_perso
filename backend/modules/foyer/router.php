@@ -69,7 +69,7 @@ switch ("{$method} {$action}") {
         respond(200, ['status' => 'success', 'message' => 'Ingrédient retiré.']);
         break;
 
-    // ---- GET /backend/foyer/history : repas des 30 derniers jours ----
+    // ---- GET /backend/foyer/history : repas des 14 derniers jours ----
     case 'GET history':
         $history = $generator->getRecentHistory();
         respond(200, [
