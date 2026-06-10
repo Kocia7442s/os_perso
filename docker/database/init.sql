@@ -81,3 +81,23 @@ CREATE TABLE IF NOT EXISTS user_preferences (
 -- Ligne unique (id=1) avec les valeurs par défaut.
 INSERT INTO user_preferences (id, household_size, veggie_meals, max_pasta, avoid)
 VALUES (1, 2, 2, 2, NULL);
+
+
+-- =========================================================
+--  Module FINANCES — Phase 1 : suivi des dépenses & revenus
+--  Saisie manuelle. Champ "qui" = dimension couple (moi/partenaire/commun).
+-- =========================================================
+CREATE TABLE IF NOT EXISTS finance_transactions (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    date       DATE          NOT NULL,                       -- date de l'opération
+    type       VARCHAR(10)   NOT NULL DEFAULT 'depense',     -- 'depense' | 'revenu'
+    montant    DECIMAL(10,2) NOT NULL,                       -- positif ; le signe vient du type
+    categorie  VARCHAR(50)   NOT NULL DEFAULT 'Autre',       -- depuis une liste prédéfinie
+    qui        VARCHAR(20)   NOT NULL DEFAULT 'commun',      -- 'moi' | 'partenaire' | 'commun'
+    libelle    VARCHAR(255)  DEFAULT NULL,                   -- ex : "Carrefour", "Resto"
+    note       TEXT          DEFAULT NULL,
+    created_at TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    KEY idx_fin_date (date),
+    KEY idx_fin_type (type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
