@@ -300,3 +300,19 @@ export function getFinanceSummary(month) {
 export function getFinanceCategories() {
   return apiGet('/finances/categories');
 }
+
+/**
+ * Budgets + réalisé du mois (GET /finances/budgets).
+ * @param {string} month "AAAA-MM".
+ * @returns {Promise<Object>} { status, data: { month,
+ *          budgets:[{categorie,montant,depense,reste,pourcentage,depassement}],
+ *          resume:{budget_total,depense_total,reste_total,depassements} } }
+ */
+export function getBudgets(month) {
+  return apiGet(`/finances/budgets?month=${encodeURIComponent(month)}`);
+}
+
+/** Définit/modifie un budget (POST /finances/budgets ; montant vide/≤0 supprime). */
+export function setBudget(categorie, montant) {
+  return apiSend('POST', '/finances/budgets', { categorie, montant });
+}

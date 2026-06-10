@@ -14,7 +14,8 @@ import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal, addMeal,
          getPreferences, savePreferences,
          getCalendarEvents, getCalendarRange,
          getTransactions, addTransaction, updateTransaction, deleteTransaction,
-         getFinanceSummary, getFinanceCategories } from './api.js';   // couche réseau
+         getFinanceSummary, getFinanceCategories,
+         getBudgets, setBudget } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -79,6 +80,12 @@ const VIEWS = {
         body: '<div id="fin-month"><p class="muted">Chargement…</p></div>' },
       { title: 'Répartition', icon: '🍩', id: 'card-fin-cats',
         body: '<div id="fin-cats"><p class="muted">Chargement…</p></div>' },
+      { title: 'Budgets', icon: '🎯', id: 'card-fin-budgets',
+        body: `
+          <button class="card-action" slot="actions" id="btn-fin-budgets"
+                  title="Gérer les budgets" aria-label="Gérer les budgets">⚙️</button>
+          <div id="fin-budgets"><p class="muted">Chargement…</p></div>
+        ` },
       { title: 'Transactions', icon: '📋', span: 2, id: 'card-fin-list',
         body: '<div id="fin-list"><p class="muted">Chargement…</p></div>' },
     ],
@@ -1623,8 +1630,12 @@ async function initFinancesView() {
 
   renderFinanceAddForm();
   initFinanceInteractions();
-  loadFinanceMonth(); // summary → carte "Ce mois-ci" + donut
-  loadFinanceList();  // transactions du mois
+  loadFinanceMonth();   // summary → carte "Ce mois-ci" + donut
+  loadFinanceList();    // transactions du mois
+  loadFinanceBudgets(); // budgets + progression du mois
+
+  const budgetsBtn = document.getElementById('btn-fin-budgets');
+  if (budgetsBtn) budgetsBtn.addEventListener('click', openBudgetsDialog);
 }
 
 /** Construit le formulaire de saisie rapide (dépend des catégories chargées). */
@@ -1699,6 +1710,7 @@ function initFinanceInteractions() {
       financeState.month = shiftMonth(financeState.month, prev ? -1 : 1);
       loadFinanceMonth();
       loadFinanceList();
+      loadFinanceBudgets();
     });
   }
 
@@ -1712,6 +1724,7 @@ function initFinanceInteractions() {
         await deleteTransaction(Number(del.dataset.id));
         loadFinanceMonth();
         loadFinanceList();
+        loadFinanceBudgets();
       } catch (err) {
         console.error('Suppression transaction échouée :', err.message);
         del.disabled = false;
@@ -1748,6 +1761,7 @@ async function handleFinanceAdd(e) {
     els.libelle.value = '';
     loadFinanceMonth();
     loadFinanceList();
+    loadFinanceBudgets();
     els.montant.focus();
   } catch (err) {
     errEl.textContent = `Échec : ${err.message}`;
@@ -1867,6 +1881,114 @@ function renderFinanceList(items) {
       + `</li>`;
   }).join('');
   return `<ul class="fin-list">${rows}</ul>`;
+}
+
+/** Charge la carte "Budgets" (progression du mois affiché). */
+async function loadFinanceBudgets() {
+  const host = document.getElementById('fin-budgets');
+  if (!host) return;
+  try {
+    const { data } = await getBudgets(financeState.month);
+    host.innerHTML = renderBudgets(data);
+  } catch (err) {
+    host.innerHTML = `<p class="error">Budgets indisponibles : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Barres de progression par catégorie budgétée + alerte dépassement. */
+function renderBudgets(data) {
+  const budgets = data.budgets || [];
+  if (!budgets.length) {
+    return '<p class="muted">Aucun budget défini. Touche ⚙️ pour en ajouter.</p>';
+  }
+  const r = data.resume;
+  const alert = r.depassements > 0
+    ? `<p class="fin-budget-alert">⚠️ ${r.depassements} budget`
+      + `${r.depassements > 1 ? 's' : ''} dépassé${r.depassements > 1 ? 's' : ''} ce mois-ci.</p>`
+    : '';
+
+  const rows = budgets.map(b => {
+    const width = Math.min(b.pourcentage, 100);
+    const state = b.depassement ? 'over' : (b.pourcentage >= 80 ? 'warn' : 'ok');
+    return `<li class="fin-budget">`
+      + `<div class="fin-budget-head">`
+      + `<span class="fin-budget-cat">${escapeHtml(b.categorie)}</span>`
+      + `<span class="fin-budget-num">${fmtEUR(b.depense)} <span class="muted">/ ${fmtEUR(b.montant)}</span></span>`
+      + `</div>`
+      + `<div class="fin-budget-bar"><span class="fin-budget-fill ${state}" style="width:${width}%"></span></div>`
+      + `</li>`;
+  }).join('');
+
+  return `${alert}<ul class="fin-budget-list">${rows}</ul>`;
+}
+
+/** Crée (une fois) la modale de gestion des budgets. */
+function ensureBudgetsDialog() {
+  let dialog = document.getElementById('budgets-dialog');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'budgets-dialog';
+  dialog.className = 'app-dialog';
+  dialog.innerHTML = `
+    <form id="budgets-form" method="dialog">
+      <h2 class="dialog-title">🎯 Budgets mensuels</h2>
+      <p class="dialog-hint">Plafond par catégorie (€ / mois). Laisse vide pour retirer.</p>
+      <div id="budgets-fields"></div>
+      <p class="dialog-error" id="budgets-error" hidden></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn-ghost" id="budgets-cancel">Annuler</button>
+        <button type="submit" class="btn-primary" id="budgets-save">Enregistrer</button>
+      </div>
+    </form>`;
+  document.body.appendChild(dialog);
+
+  dialog.querySelector('#budgets-cancel').addEventListener('click', () => dialog.close());
+
+  dialog.querySelector('#budgets-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const saveBtn = dialog.querySelector('#budgets-save');
+    const errEl   = dialog.querySelector('#budgets-error');
+    errEl.hidden = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Enregistrement…';
+    try {
+      const inputs = [...dialog.querySelectorAll('#budgets-fields input[data-cat]')];
+      await Promise.all(inputs.map(inp => setBudget(inp.dataset.cat, inp.value.trim())));
+      dialog.close();
+      loadFinanceBudgets();
+    } catch (err) {
+      errEl.textContent = `Échec : ${err.message}`;
+      errEl.hidden = false;
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Enregistrer';
+    }
+  });
+
+  return dialog;
+}
+
+/** Ouvre la modale budgets, pré-remplie avec les budgets actuels. */
+async function openBudgetsDialog() {
+  const dialog = ensureBudgetsDialog();
+  const list   = dialog.querySelector('#budgets-fields');
+  list.innerHTML = '<p class="muted">Chargement…</p>';
+  dialog.showModal();
+
+  const current = {};
+  try {
+    const { data } = await getBudgets(financeState.month);
+    (data.budgets || []).forEach(b => { current[b.categorie] = b.montant; });
+  } catch (_) { /* on affiche quand même les champs vides */ }
+
+  const cats = financeState.meta?.categories?.depense || [];
+  list.innerHTML = cats.map(c =>
+    `<label class="field budgets-row">`
+    + `<span>${escapeHtml(c)}</span>`
+    + `<input type="text" inputmode="decimal" data-cat="${escapeAttr(c)}" `
+    + `value="${current[c] != null ? current[c] : ''}" placeholder="—">`
+    + `</label>`).join('');
 }
 
 // ---------------------------------------------------------------------------

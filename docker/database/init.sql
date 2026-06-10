@@ -101,3 +101,14 @@ CREATE TABLE IF NOT EXISTS finance_transactions (
     KEY idx_fin_date (date),
     KEY idx_fin_type (type)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Budgets mensuels RÉCURRENTS par catégorie de dépense (un seul par catégorie).
+-- Comparés au réalisé du mois affiché → barres de progression + alerte dépassement.
+CREATE TABLE IF NOT EXISTS finance_budgets (
+    id         INT UNSIGNED NOT NULL AUTO_INCREMENT,
+    categorie  VARCHAR(50)   NOT NULL,
+    montant    DECIMAL(10,2) NOT NULL,                  -- plafond mensuel
+    updated_at TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    PRIMARY KEY (id),
+    UNIQUE KEY uniq_budget_cat (categorie)               -- 1 budget par catégorie
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

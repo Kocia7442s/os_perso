@@ -9,6 +9,7 @@
 
 require_once __DIR__ . '/Transactions.php';
 require_once __DIR__ . '/FinanceSummary.php';
+require_once __DIR__ . '/Budgets.php';
 
 $action = $segments[1] ?? '';
 $method = $_SERVER['REQUEST_METHOD'];
@@ -65,6 +66,25 @@ switch ("{$method} {$action}") {
     case 'GET summary':
         $summary = (new FinanceSummary())->forMonth($_GET['month'] ?? null);
         respond(200, ['status' => 'success', 'data' => $summary]);
+        break;
+
+    // ---- GET /backend/finances/budgets?month=AAAA-MM : budgets + réalisé du mois ----
+    case 'GET budgets':
+        respond(200, [
+            'status' => 'success',
+            'data'   => (new Budgets())->forMonth($_GET['month'] ?? null),
+        ]);
+        break;
+
+    // ---- POST /backend/finances/budgets : définir/modifier (montant ≤ 0 supprime) ----
+    case 'POST budgets':
+        $body   = json_decode(file_get_contents('php://input'), true) ?? [];
+        $budget = (new Budgets())->set($body['categorie'] ?? null, $body['montant'] ?? null);
+        respond(200, [
+            'status'  => 'success',
+            'data'    => $budget,                 // null = budget supprimé / catégorie invalide
+            'cleared' => $budget === null,
+        ]);
         break;
 
     // ---- GET /backend/finances/categories : listes prédéfinies (front synchro) ----
