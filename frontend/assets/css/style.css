@@ -249,6 +249,52 @@ body {
 }
 
 /* =========================================================
+   CARTE "FOYER AUJOURD'HUI" — résumé en 3 tuiles
+   ========================================================= */
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.today-tile {
+  background: var(--surface);
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  text-align: left;
+  font: inherit;
+  color: var(--text);
+}
+/* Tuiles cliquables (agenda, courses) : rendu bouton discret. */
+.today-tile-btn { cursor: pointer; transition: border-color 0.15s, background 0.15s; }
+.today-tile-btn:hover { border-color: var(--accent); background: var(--accent-soft); }
+.today-tile-h {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+/* Repas du jour : réutilise .menu-list / .menu-item (voir bloc MENU). */
+/* Agenda du jour */
+.today-ev {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  margin-top: 5px;
+  font-size: 0.86rem;
+}
+.today-ev-time {
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+  min-width: 40px;
+}
+.today-ev-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.today-more { margin: 6px 0 0; font-size: 0.78rem; color: var(--text-muted); }
+/* Courses : gros compteur */
+.today-big { margin: 0; font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
+.today-big.ok { color: var(--ok); font-size: 1.2rem; }
+
+/* =========================================================
    BOUTON D'ACTION (slot "actions" des <bento-card>) + MODALE
    ========================================================= */
 .card-action {

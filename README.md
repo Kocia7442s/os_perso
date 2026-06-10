@@ -27,7 +27,7 @@ os_perso/
 │
 ├── docker/
 │   ├── php/Dockerfile        # Image Apache/PHP 8.2 custom (pdo_mysql, mod_rewrite, AllowOverride)
-│   └── database/init.sql     # Schéma + données de départ (rejoué sur volume neuf)
+│   └── database/init.sql     # Schéma des tables (rejoué sur volume neuf ; sans données de départ)
 │
 ├── backend/                  # API RESTful — ne sert que du JSON
 │   ├── .htaccess             # Front controller : réécrit tout vers index.php
@@ -35,12 +35,16 @@ os_perso/
 │   ├── core/
 │   │   └── Database.php       # Connexion PDO MariaDB (Singleton)
 │   └── modules/
-│       ├── foyer/             # Module Foyer (menu IA, courses, placards, préférences)
-│       │   ├── router.php        # Sous-routeur (méthode + action)
-│       │   ├── MenuGenerator.php  # Génération du menu via Claude (cURL natif)
-│       │   ├── ShoppingList.php   # CRUD liste de courses
-│       │   ├── Pantry.php         # CRUD placards (inventory_pantry)
-│       │   └── Preferences.php    # Préférences du foyer
+│       ├── foyer/             # Module Foyer (menu IA, courses, placards, recettes…)
+│       │   ├── router.php         # Sous-routeur (méthode + action)
+│       │   ├── MenuGenerator.php   # Menu + recettes via Claude (cURL), cuisson, décrément stock
+│       │   ├── ShoppingList.php    # CRUD liste de courses (rayons, anti-doublon)
+│       │   ├── Pantry.php          # CRUD placards + décrément intelligent (consume)
+│       │   └── Preferences.php     # Préférences du foyer
+│       ├── calendrier/        # Module Calendrier (agenda iCal Apple, lecture seule)
+│       │   ├── router.php         # Routes events / feeds
+│       │   ├── Calendar.php        # Agrégation des flux .ics + cache fichier (TTL)
+│       │   └── ICalParser.php      # Parseur iCalendar natif (RRULE, EXDATE, fuseaux)
 │       ├── domotique/        # (à venir)
 │       ├── pro/              # (à venir)
 │       └── finances/         # (à venir)
@@ -111,6 +115,8 @@ docker compose ps
 | `WEB_PORT`, `DB_PORT` | Ports exposés sur l'hôte |
 | `ANTHROPIC_API_KEY` | Clé API Claude (https://console.anthropic.com/) |
 | `ANTHROPIC_MODEL` | Modèle utilisé (`claude-haiku-4-5` par défaut, ou `claude-sonnet-4-6`) |
+| `CAL_1_URL` … `CAL_6_URL` | Calendriers iCal publiés depuis Apple Agenda (+ `CAL_n_NAME`, `CAL_n_COLOR`) |
+| `CAL_CACHE_TTL` | Durée de cache des flux calendrier en secondes (défaut 600) |
 | `TZ` | Fuseau horaire |
 
 > ⚠️ Le `.env` **réel n'est jamais commité** (il est dans le `.gitignore`).
@@ -133,7 +139,8 @@ docker compose exec -T db sh -c 'exec mariadb -uos_user -pospassword os_perso' <
 docker compose down -v && docker compose up -d
 ```
 
-**Tables actuelles :** `shopping_items`, `inventory_pantry`, `meals_history`, `weekly_plan`, `user_preferences`.
+**Tables actuelles :** `shopping_items` (avec `rayon`), `inventory_pantry`, `meals_history`,
+`weekly_plan` (avec `cooked` + `recipe`), `meal_ingredients` (ingrédients par plat), `user_preferences`.
 
 ---
 
@@ -146,14 +153,19 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 |---|---|---|
 | `GET` | `/backend/` | Test de vie de l'API |
 | `GET` | `/backend/test-db` | Test de connexion MariaDB (`SELECT 1`) |
-| `POST` | `/backend/foyer/generate-menu` | Génère un menu via l'IA, le persiste, déduit la liste de courses |
+| `POST` | `/backend/foyer/generate-menu` | Génère un menu via l'IA, le persiste, déduit la liste de courses (par rayon) |
 | `GET` | `/backend/foyer/menu` | Dernier menu persistant (sans rappeler l'IA) |
+| `PUT` | `/backend/foyer/cook/{id}` | « J'ai cuisiné » : archive l'historique **et** décrémente le stock |
+| `GET` · `POST` | `/backend/foyer/recipe/{id}` | Recette d'un plat (cache) / la générer via l'IA |
 | `GET` | `/backend/foyer/history` | Repas des 14 derniers jours |
-| `GET` · `POST` | `/backend/foyer/shopping` | Liste de courses : lire / ajouter |
+| `GET` · `POST` | `/backend/foyer/shopping` | Liste de courses : lire / ajouter (nom, quantité, rayon) |
 | `PUT` · `DELETE` | `/backend/foyer/shopping/{id}` | Cocher-décocher / supprimer un article |
+| `POST` | `/backend/foyer/to-pantry` | Ranger un article acheté dans les placards |
 | `GET` · `POST` | `/backend/foyer/stock` | Placards : lire / ajouter |
 | `PUT` · `DELETE` | `/backend/foyer/stock/{id}` | Modifier (quantité, essentiel) / retirer |
 | `GET` · `POST` | `/backend/foyer/preferences` | Préférences du foyer : lire / enregistrer |
+| `GET` | `/backend/calendrier/events` | Agenda fusionné (`?days=N` ou `?from=&to=`) |
+| `GET` | `/backend/calendrier/feeds` | Calendriers configurés (nom + couleur) |
 
 **Ajouter un module** : créer `backend/modules/<nom>/router.php`, puis ajouter un
 `case '<nom>'` dans le `switch` de `backend/index.php`. Le `core` ne bouge pas.
@@ -162,9 +174,12 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 
 ## 🖥️ Frontend
 
-- **Dashboard « Bento Box »**, Mobile First (Sidebar ↔ Bottom Bar sous 768px).
+- **Dashboard « Bento Box »**, Mobile First (Sidebar ↔ Bottom Bar sous 768px), responsive
+  vérifié sur téléphone / tablette / ordinateur.
 - Navigation **SPA sans rechargement** (hash routing) gérée par `js/app.js`.
 - Composant réutilisable `<bento-card title="..." icon="..." span="...">`.
+- **Interactions par délégation d'événements** (un listener par conteneur, survit aux ré-rendus).
+- Modales natives `<dialog>` : préférences du menu, **recette d'un plat**, **calendrier** (semaine/mois).
 - Couche réseau isolée dans `js/api.js` (jamais de `fetch` ailleurs).
 
 ---
@@ -173,7 +188,8 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 
 | Module | Statut | Contenu |
 |---|---|---|
-| **Foyer** | 🟢 Fonctionnel | Générateur de menu IA, liste de courses (avec quantités), gestion des placards, préférences |
+| **Foyer** | 🟢 Fonctionnel | Menu IA (avec ingrédients par plat) ; **recettes détaillées** générées à la demande ; liste de courses **triée par rayon** (+ export texte) ; placards ; boucle complète *acheté → placard* et *cuisiné → décrément du stock + historique* ; préférences |
+| **Calendrier** | 🟢 Fonctionnel | Agenda commun en **lecture seule** depuis les calendriers **Apple/iCal** publiés (parseur natif, cache) ; vues **jour / semaine / mois**, fusion multi-calendriers |
 | **Domotique** | ⚪ Prévu | Home Assistant, capteurs Zigbee, monitoring RPi |
 | **Pro & Freelance** | ⚪ Prévu | Facturation, suivi du CA, rappels Urssaf/CFE |
 | **Finances** | ⚪ Prévu | Suivi des dépenses, tracker d'investissements |

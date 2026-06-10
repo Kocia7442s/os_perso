@@ -26,6 +26,8 @@ const VIEWS = {
   dashboard: {
     title: 'Tableau de bord',
     cards: [
+      { title: 'Foyer aujourd\'hui', icon: '☀️', span: 2, id: 'card-today',
+        body: '<div id="today-result"><p class="muted">Chargement…</p></div>' },
       { title: 'État du système', icon: '🩺', span: 2, id: 'system-status',
         body: '<p class="muted">Connexion à l\'API…</p>' },
       { title: 'Liste de courses', icon: '🛒',
@@ -107,7 +109,7 @@ function renderView(name) {
   setActiveNav(name);
 
   // Hook post-rendu : câbler / remplir les cartes interactives ou "live"
-  if (name === 'dashboard') loadSystemStatus();
+  if (name === 'dashboard') { loadSystemStatus(); loadTodaySummary(); initTodayInteractions(); }
   if (name === 'foyer')     initFoyerView();
 }
 
@@ -155,6 +157,150 @@ function initFoyerView() {
   initPantryInteractions();
   // …et l'agenda commun (calendriers Apple publiés).
   loadCalendar();
+}
+
+// ---------------------------------------------------------------------------
+//  Carte "Foyer aujourd'hui" — résumé en un coup d'œil (repas, agenda, courses)
+//  100 % côté front : agrège les 3 endpoints déjà existants, aucun appel IA.
+// ---------------------------------------------------------------------------
+
+// Index getDay() (0 = dimanche) → nom de jour tel que stocké dans weekly_plan.
+const WEEKDAYS_FR = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+
+/** Charge en parallèle menu + agenda du jour + courses, puis rend le résumé. */
+async function loadTodaySummary() {
+  const result = document.getElementById('today-result');
+  if (!result) return;
+
+  const today = startOfDay(new Date());
+  // Promise.allSettled : une carte qui échoue ne fait pas tomber les deux autres.
+  const [menuRes, calRes, shopRes] = await Promise.allSettled([
+    getCurrentMenu(),
+    getCalendarRange(ymd(today), ymd(addDays(today, 1))),
+    getShoppingList(),
+  ]);
+
+  const semaine  = menuRes.value?.data?.menu?.semaine ?? [];
+  const calData  = calRes.value ?? null;
+  const shopList = shopRes.value?.data ?? [];
+
+  result.innerHTML = `<div class="today-grid">`
+    + todayMealTile(semaine, today)
+    + todayAgendaTile(calData, today, calRes.status === 'rejected')
+    + todayShoppingTile(shopList, shopRes.status === 'rejected')
+    + `</div>`;
+}
+
+/** Tuile "repas du jour" : le soir en semaine, midi + soir le week-end. */
+function todayMealTile(semaine, today) {
+  const jourNom = WEEKDAYS_FR[today.getDay()];
+  const isWeekend = today.getDay() === 0 || today.getDay() === 6;
+  const entry = semaine.find(d => d.jour === jourNom);
+  const repas = entry?.repas ?? {};
+
+  // Réutilise mealRow() (même rendu que la carte Menu) : libellé + plat cliquable
+  // + bouton "J'ai cuisiné". En semaine on ne montre que le soir.
+  const rows = isWeekend
+    ? [['Midi', repas.midi], ['Soir', repas.soir]]
+    : [['Ce soir', repas.soir]];
+
+  const inner = entry
+    ? `<ul class="menu-list">${rows.map(([lbl, m]) => mealRow(lbl, m)).join('')}</ul>`
+    : `<p class="muted">Pas de menu planifié pour aujourd'hui.</p>`;
+
+  return `<div class="today-tile">`
+    + `<h3 class="today-tile-h">🍽️ Au menu</h3>`
+    + inner
+    + `</div>`;
+}
+
+/** Tuile "agenda du jour" : événements d'aujourd'hui (clic → modale calendrier). */
+function todayAgendaTile(calData, today, failed) {
+  const calendars = Array.isArray(calData?.calendars) ? calData.calendars : [];
+  const events    = Array.isArray(calData?.data) ? calData.data : [];
+
+  let inner;
+  if (failed) {
+    inner = `<p class="muted">Agenda indisponible.</p>`;
+  } else if (calendars.length === 0) {
+    inner = `<p class="muted">Aucun calendrier configuré.</p>`;
+  } else {
+    const todays = events.filter(e => occursOnDay(e, today));
+    if (todays.length === 0) {
+      inner = `<p class="muted">Rien de prévu aujourd'hui. 🎉</p>`;
+    } else {
+      const allDay = todays.filter(e => e.all_day);
+      const timed  = todays.filter(e => !e.all_day)
+        .sort((a, b) => evStart(a) - evStart(b));
+      let html = '';
+      html += allDay.map(e =>
+        `<div class="today-ev"><span class="today-ev-time">jour</span>`
+        + `<span class="today-ev-title">${escapeHtml(e.title)}</span></div>`).join('');
+      html += timed.slice(0, 3).map(e =>
+        `<div class="today-ev"><span class="today-ev-time">${formatTime(e.start)}</span>`
+        + `<span class="today-ev-title">${escapeHtml(e.title)}</span></div>`).join('');
+      const extra = timed.length - 3;
+      if (extra > 0) html += `<p class="today-more">+ ${extra} autre${extra > 1 ? 's' : ''}…</p>`;
+      inner = html;
+    }
+  }
+
+  return `<button type="button" class="today-tile today-tile-btn" id="today-agenda" `
+    + `title="Ouvrir le calendrier">`
+    + `<h3 class="today-tile-h">📅 Aujourd'hui</h3>${inner}</button>`;
+}
+
+/** Tuile "courses" : nombre d'articles restant à acheter (clic → carte courses). */
+function todayShoppingTile(shopList, failed) {
+  let inner;
+  if (failed) {
+    inner = `<p class="muted">Liste indisponible.</p>`;
+  } else {
+    const toBuy = shopList.filter(i => !i.achete).length;
+    inner = toBuy === 0
+      ? `<p class="today-big ok">À jour ✓</p>`
+      : `<p class="today-big">${toBuy}</p>`
+        + `<p class="muted">article${toBuy > 1 ? 's' : ''} à acheter</p>`;
+  }
+
+  return `<button type="button" class="today-tile today-tile-btn" id="today-shopping" `
+    + `title="Aller à la liste de courses">`
+    + `<h3 class="today-tile-h">🛒 Courses</h3>${inner}</button>`;
+}
+
+/** Délégation des clics de la carte résumé (recette, cuisiné, agenda, courses). */
+function initTodayInteractions() {
+  const container = document.getElementById('today-result');
+  if (!container) return;
+
+  container.addEventListener('click', async (e) => {
+    // Nom du plat → recette (réutilise la modale existante).
+    const recipeBtn = e.target.closest('.meal-recipe');
+    if (recipeBtn) { openRecipeModal(Number(recipeBtn.dataset.id)); return; }
+
+    // Bouton "j'ai cuisiné" → bascule, puis on rafraîchit résumé + menu + placards.
+    const cookBtn = e.target.closest('.meal-cook');
+    if (cookBtn) {
+      const id = Number(cookBtn.dataset.id);
+      const target = !cookBtn.classList.contains('on');
+      cookBtn.disabled = true;
+      try {
+        await cookMeal(id, target);
+        await Promise.all([loadTodaySummary(), loadCurrentMenu()]);
+        if (target) await loadPantry();
+      } catch (err) {
+        console.error('Bascule "cuisiné" (résumé) échouée :', err.message);
+        cookBtn.disabled = false;
+      }
+      return;
+    }
+
+    // Tuile agenda → ouvre la modale calendrier.
+    if (e.target.closest('#today-agenda')) { openCalendarModal(); return; }
+
+    // Tuile courses → bascule sur la vue Foyer (liste de courses détaillée).
+    if (e.target.closest('#today-shopping')) { location.hash = 'foyer'; return; }
+  });
 }
 
 /** Charge et affiche la liste de courses dans sa carte. */
