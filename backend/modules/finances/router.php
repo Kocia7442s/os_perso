@@ -141,6 +141,21 @@ switch ("{$method} {$action}") {
         respond(200, ['status' => 'success', 'message' => 'Compte supprimé.']);
         break;
 
+    // ---- GET /backend/finances/snapshots : historique valeur nette (courbe) ----
+    case 'GET snapshots':
+        respond(200, [
+            'status' => 'success',
+            'data'   => ['snapshots' => (new Accounts())->snapshots()],
+        ]);
+        break;
+
+    // ---- POST /backend/finances/snapshots : enregistrer l'instantané du mois ----
+    case 'POST snapshots':
+        $body = json_decode(file_get_contents('php://input'), true) ?? [];
+        $snap = (new Accounts())->takeSnapshot($body['month'] ?? null);
+        respond(201, ['status' => 'success', 'data' => $snap]);
+        break;
+
     // ---- Action inconnue dans le module Finances ----
     default:
         respond(404, [

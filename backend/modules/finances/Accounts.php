@@ -180,4 +180,61 @@ class Accounts
         $stmt = $this->db->query('DELETE FROM finance_accounts WHERE id = :id', [':id' => $id]);
         return $stmt->rowCount() > 0;
     }
+
+    // ---------------------------------------------------------------------
+    //  Instantanés mensuels de la valeur nette (Phase 2.1)
+    // ---------------------------------------------------------------------
+
+    /**
+     * Enregistre la valeur nette ACTUELLE comme instantané du mois (upsert : un
+     * 2e appel le même mois écrase). Mois par défaut = mois courant.
+     * @return array { mois, valeur_nette, actifs, dettes }
+     */
+    public function takeSnapshot(?string $month = null): array
+    {
+        $month = trim((string) $month);
+        if (!preg_match('/^\d{4}-\d{2}$/', $month)) {
+            $month = date('Y-m');
+        }
+        $r = $this->overview()['resume'];
+
+        // VALUES(col) plutôt que de réutiliser les placeholders (prepared non émulés → HY093).
+        $this->db->query(
+            'INSERT INTO finance_networth_snapshots (mois, valeur_nette, actifs, dettes)
+             VALUES (:m, :vn, :a, :d)
+             ON DUPLICATE KEY UPDATE valeur_nette = VALUES(valeur_nette),
+                                     actifs = VALUES(actifs), dettes = VALUES(dettes)',
+            [':m' => $month, ':vn' => $r['valeur_nette'], ':a' => $r['actifs'], ':d' => $r['dettes']]
+        );
+
+        return [
+            'mois'         => $month,
+            'valeur_nette' => $r['valeur_nette'],
+            'actifs'       => $r['actifs'],
+            'dettes'       => $r['dettes'],
+        ];
+    }
+
+    /**
+     * Historique des instantanés, du plus ancien au plus récent (pour la courbe).
+     * @param int $limit nombre max de mois remontés (borné 1..120).
+     */
+    public function snapshots(int $limit = 24): array
+    {
+        $limit = max(1, min($limit, 120)); // borné + casté int → interpolation SQL sûre
+        $rows = $this->db->query(
+            "SELECT mois, valeur_nette, actifs, dettes
+               FROM finance_networth_snapshots
+              ORDER BY mois DESC
+              LIMIT {$limit}"
+        )->fetchAll();
+
+        // On renvoie en ordre chronologique croissant (sens de lecture du graphe).
+        return array_map(static fn(array $r): array => [
+            'mois'         => (string) $r['mois'],
+            'valeur_nette' => round((float) $r['valeur_nette'], 2),
+            'actifs'       => round((float) $r['actifs'], 2),
+            'dettes'       => round((float) $r['dettes'], 2),
+        ], array_reverse($rows));
+    }
 }

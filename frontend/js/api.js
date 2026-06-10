@@ -342,3 +342,16 @@ export function updateAccount(id, fields) {
 export function deleteAccount(id) {
   return apiSend('DELETE', `/finances/comptes/${id}`);
 }
+
+/**
+ * Historique des instantanés de valeur nette (GET /finances/snapshots).
+ * @returns {Promise<Object>} { status, data: { snapshots:[{mois,valeur_nette,actifs,dettes}] } }
+ */
+export function getSnapshots() {
+  return apiGet('/finances/snapshots');
+}
+
+/** Enregistre l'instantané de valeur nette du mois (POST /finances/snapshots). */
+export function takeSnapshot(month) {
+  return apiSend('POST', '/finances/snapshots', month ? { month } : {});
+}

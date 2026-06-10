@@ -16,7 +16,8 @@ import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal, addMeal,
          getTransactions, addTransaction, updateTransaction, deleteTransaction,
          getFinanceSummary, getFinanceCategories,
          getBudgets, setBudget,
-         getAccounts, addAccount, updateAccount, deleteAccount } from './api.js';   // couche réseau
+         getAccounts, addAccount, updateAccount, deleteAccount,
+         getSnapshots, takeSnapshot } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -97,6 +98,12 @@ const VIEWS = {
         ` },
       { title: 'Allocation', icon: '🥧', id: 'card-fin-alloc',
         body: '<div id="fin-alloc"><p class="muted">Chargement…</p></div>' },
+      { title: 'Évolution du patrimoine', icon: '📈', span: 2, id: 'card-fin-evo',
+        body: `
+          <button class="card-action" slot="actions" id="btn-fin-snapshot"
+                  title="Enregistrer la valeur nette de ce mois" aria-label="Enregistrer ce mois">📸</button>
+          <div id="fin-evo"><p class="muted">Chargement…</p></div>
+        ` },
     ],
   },
 };
@@ -1576,6 +1583,7 @@ const financeState = {
   meta:      null, // { categories, types, qui, account_types } (cache)
   chart:     null, // donut "Répartition" des dépenses (à détruire avant re-render)
   allocChart: null, // donut "Allocation" du patrimoine
+  evoChart:  null, // courbe "Évolution du patrimoine"
   accounts:  [],   // dernier overview des comptes (pour l'édition)
 };
 
@@ -1598,6 +1606,12 @@ function currentMonthKey() {
 function monthLabel(key) {
   const [y, m] = key.split('-').map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+/** "2026-06" → "juin 26" (libellé court pour l'axe du graphe). */
+function monthLabelShort(key) {
+  const [y, m] = key.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'short', year: '2-digit' });
 }
 
 /** Décale un mois "AAAA-MM" de ±n mois. */
@@ -1643,14 +1657,18 @@ async function initFinancesView() {
   initFinanceInteractions();
   loadFinanceMonth();   // summary → carte "Ce mois-ci" + donut
   loadFinanceList();    // transactions du mois
-  loadFinanceBudgets(); // budgets + progression du mois
-  loadPatrimoine();     // comptes + valeur nette + allocation
+  loadFinanceBudgets();      // budgets + progression du mois
+  loadPatrimoine();          // comptes + valeur nette + allocation
+  loadNetWorthHistory();     // courbe d'évolution de la valeur nette
 
   const budgetsBtn = document.getElementById('btn-fin-budgets');
   if (budgetsBtn) budgetsBtn.addEventListener('click', openBudgetsDialog);
 
   const accountBtn = document.getElementById('btn-fin-account');
   if (accountBtn) accountBtn.addEventListener('click', () => openAccountDialog());
+
+  const snapshotBtn = document.getElementById('btn-fin-snapshot');
+  if (snapshotBtn) snapshotBtn.addEventListener('click', handleTakeSnapshot);
 
   initPatrimoineInteractions();
 }
@@ -2210,6 +2228,85 @@ function openAccountDialog(account = null) {
   document.getElementById('account-error').hidden = true;
   dialog.showModal();
   form.elements.nom.focus();
+}
+
+/** Charge la courbe d'évolution de la valeur nette (instantanés mensuels). */
+async function loadNetWorthHistory() {
+  const host = document.getElementById('fin-evo');
+  if (!host) return;
+  try {
+    const { data } = await getSnapshots();
+    renderNetWorthChart(data.snapshots || []);
+  } catch (err) {
+    host.innerHTML = `<p class="error">Évolution indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Courbe Chart.js de la valeur nette dans le temps. */
+async function renderNetWorthChart(snapshots) {
+  const host = document.getElementById('fin-evo');
+  if (!host) return;
+
+  if (financeState.evoChart) { financeState.evoChart.destroy(); financeState.evoChart = null; }
+
+  if (!snapshots.length) {
+    host.innerHTML = '<p class="muted">Aucun instantané. Touche 📸 pour enregistrer la valeur nette de ce mois.</p>';
+    return;
+  }
+
+  host.innerHTML = '<div class="fin-chart-wrap"><canvas id="fin-evo-line"></canvas></div>';
+  try {
+    const Chart  = await ensureChartJs();
+    const canvas = document.getElementById('fin-evo-line');
+    if (!canvas) return;
+    financeState.evoChart = new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: snapshots.map(s => monthLabelShort(s.mois)),
+        datasets: [{
+          label: 'Valeur nette',
+          data: snapshots.map(s => s.valeur_nette),
+          borderColor: '#6c8cff',
+          backgroundColor: 'rgba(108, 140, 255, 0.14)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 3,
+          pointBackgroundColor: '#6c8cff',
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: (ctx) => fmtEUR(ctx.parsed.y) } },
+        },
+        scales: {
+          x: { ticks: { color: '#8b93a7' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: {
+            ticks: { color: '#8b93a7', callback: (v) => fmtEUR(v) },
+            grid: { color: 'rgba(255,255,255,0.05)' },
+          },
+        },
+      },
+    });
+  } catch (err) {
+    host.innerHTML = `<p class="error">Graphique indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Bouton 📸 : enregistre la valeur nette du mois courant puis recharge la courbe. */
+async function handleTakeSnapshot() {
+  const btn = document.getElementById('btn-fin-snapshot');
+  if (btn) btn.disabled = true;
+  try {
+    await takeSnapshot();          // mois courant côté backend
+    await loadNetWorthHistory();
+  } catch (err) {
+    console.error('Instantané échoué :', err.message);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ---------------------------------------------------------------------------
