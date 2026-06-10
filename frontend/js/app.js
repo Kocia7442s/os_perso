@@ -33,6 +33,8 @@ const VIEWS = {
     cards: [
       { title: 'Foyer aujourd\'hui', icon: '☀️', span: 2, id: 'card-today',
         body: '<div id="today-result"><p class="muted">Chargement…</p></div>' },
+      { title: 'Finances', icon: '💶', span: 2, id: 'card-fin-summary',
+        body: '<div id="fin-summary-result"><p class="muted">Chargement…</p></div>' },
       { title: 'État du système', icon: '🩺', span: 2, id: 'system-status',
         body: '<p class="muted">Connexion à l\'API…</p>' },
     ],
@@ -137,7 +139,11 @@ function renderView(name) {
   setActiveNav(name);
 
   // Hook post-rendu : câbler / remplir les cartes interactives ou "live"
-  if (name === 'dashboard') { loadSystemStatus(); loadTodaySummary(); initTodayInteractions(); }
+  if (name === 'dashboard') {
+    loadSystemStatus();
+    loadTodaySummary(); initTodayInteractions();
+    loadFinanceDashboard(); initFinanceDashboardInteractions();
+  }
   if (name === 'foyer')     initFoyerView();
   if (name === 'finances')  initFinancesView();
 }
@@ -2307,6 +2313,78 @@ async function handleTakeSnapshot() {
   } finally {
     if (btn) btn.disabled = false;
   }
+}
+
+// ---------------------------------------------------------------------------
+//  Carte résumé FINANCES (Dashboard) — l'essentiel en un coup d'œil
+//  Agrège summary du mois + valeur nette + alerte budgets ; clic → vue Finances.
+// ---------------------------------------------------------------------------
+
+async function loadFinanceDashboard() {
+  const host = document.getElementById('fin-summary-result');
+  if (!host) return;
+
+  const month = currentMonthKey();
+  const [sumR, accR, budR] = await Promise.allSettled([
+    getFinanceSummary(month),
+    getAccounts(),
+    getBudgets(month),
+  ]);
+
+  const totaux = sumR.value?.data?.totaux ?? null;
+  const net    = accR.value?.data?.resume?.valeur_nette;
+  const resume = budR.value?.data?.resume ?? null;
+
+  host.innerHTML = `<div class="today-grid">`
+    + finDashMonthTile(totaux)
+    + finDashNetTile(net, accR.status === 'fulfilled')
+    + finDashBudgetTile(resume, budR.status === 'fulfilled')
+    + `</div>`;
+}
+
+/** Tuile solde du mois (revenus − dépenses). */
+function finDashMonthTile(t) {
+  const inner = t
+    ? `<p class="fin-dash-amount ${t.solde >= 0 ? 'pos' : 'neg'}">${fmtEUR(t.solde)}</p>`
+      + `<p class="muted">${fmtEUR(t.depenses)} dépensés</p>`
+    : '<p class="muted">Indisponible</p>';
+  return `<button type="button" class="today-tile today-tile-btn">`
+    + `<h3 class="today-tile-h">💶 Solde du mois</h3>${inner}</button>`;
+}
+
+/** Tuile valeur nette (patrimoine). */
+function finDashNetTile(net, ok) {
+  const inner = (ok && net != null)
+    ? `<p class="fin-dash-amount ${net >= 0 ? 'pos' : 'neg'}">${fmtEUR(net)}</p>`
+    : '<p class="muted">Indisponible</p>';
+  return `<button type="button" class="today-tile today-tile-btn">`
+    + `<h3 class="today-tile-h">🏦 Valeur nette</h3>${inner}</button>`;
+}
+
+/** Tuile alerte budgets (nombre de dépassements du mois). */
+function finDashBudgetTile(resume, ok) {
+  let inner;
+  if (!ok || !resume) {
+    inner = '<p class="muted">Indisponible</p>';
+  } else if ((resume.budget_total ?? 0) === 0) {
+    inner = '<p class="muted">Aucun budget défini</p>';
+  } else if (resume.depassements > 0) {
+    const n = resume.depassements;
+    inner = `<p class="fin-dash-note over">⚠️ ${n} dépassé${n > 1 ? 's' : ''}</p>`;
+  } else {
+    inner = '<p class="fin-dash-note ok">✓ Dans les clous</p>';
+  }
+  return `<button type="button" class="today-tile today-tile-btn">`
+    + `<h3 class="today-tile-h">🎯 Budgets</h3>${inner}</button>`;
+}
+
+/** Tous les clics de la carte → vue Finances. */
+function initFinanceDashboardInteractions() {
+  const host = document.getElementById('fin-summary-result');
+  if (!host) return;
+  host.addEventListener('click', (e) => {
+    if (e.target.closest('.today-tile-btn')) location.hash = 'finances';
+  });
 }
 
 // ---------------------------------------------------------------------------

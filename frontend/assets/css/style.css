@@ -314,6 +314,14 @@ body {
 .today-big { margin: 0; font-size: 1.8rem; font-weight: 700; line-height: 1.1; }
 .today-big.ok { color: var(--ok); font-size: 1.2rem; }
 
+/* Tuiles du résumé Finances (Dashboard) */
+.fin-dash-amount { margin: 0; font-size: 1.5rem; font-weight: 700; line-height: 1.15; }
+.fin-dash-amount.pos { color: var(--ok); }
+.fin-dash-amount.neg { color: var(--danger); }
+.fin-dash-note { margin: 0; font-size: 1.05rem; font-weight: 600; }
+.fin-dash-note.over { color: var(--danger); }
+.fin-dash-note.ok   { color: var(--ok); }
+
 /* =========================================================
    BOUTON D'ACTION (slot "actions" des <bento-card>) + MODALE
    ========================================================= */
