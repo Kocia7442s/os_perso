@@ -1,8 +1,13 @@
-# 🧠 OS Perso — Mon Second Cerveau
+# 🧠 SCADA — *Supervisory Control And Data Acquisition*
 
-Webapp centrale et modulaire pour gérer **tous les aspects de ma vie** : domotique,
-foyer, activité freelance et finances. Un « système d'exploitation personnel »
-auto-hébergé, pensé pour tourner à terme sur une infrastructure locale de Raspberry Pi.
+**SCADA** est ma webapp centrale et modulaire pour piloter et superviser **tous les aspects
+de ma vie** : domotique, foyer, activité freelance et finances. Un « système d'exploitation
+personnel » (second cerveau) auto-hébergé, pensé pour tourner à terme sur un cluster local
+de Raspberry Pi — d'où le clin d'œil au terme industriel *SCADA*, mais appliqué au quotidien.
+
+> ℹ️ « SCADA » est le **nom du produit**. Les identifiants techniques internes (dossier du
+> dépôt, base `os_perso`, conteneurs `os_perso_web`/`os_perso_db`, volume) restent inchangés
+> pour ne pas casser l'infra existante.
 
 ---
 
@@ -21,7 +26,7 @@ auto-hébergé, pensé pour tourner à terme sur une infrastructure locale de Ra
 ## 🏗️ Architecture
 
 ```
-os_perso/
+os_perso/                     # (dossier du dépôt — produit : « SCADA »)
 ├── docker-compose.yml        # Orchestration (web + db)
 ├── .env / .env.example       # Secrets & configuration (le .env réel est gitignored)
 │
@@ -45,13 +50,21 @@ os_perso/
 │       │   ├── router.php         # Routes events / feeds
 │       │   ├── Calendar.php        # Agrégation des flux .ics + cache fichier (TTL)
 │       │   └── ICalParser.php      # Parseur iCalendar natif (RRULE, EXDATE, fuseaux)
-│       ├── domotique/        # (à venir)
-│       ├── pro/              # (à venir)
-│       └── finances/         # (à venir)
+│       ├── finances/         # Module Finances (dépenses, budgets, patrimoine)
+│       │   ├── router.php          # Routes transactions / summary / budgets / comptes / snapshots
+│       │   ├── Transactions.php     # CRUD dépenses & revenus (catégories, champ « qui »)
+│       │   ├── FinanceSummary.php   # Agrégats du mois (solde, par catégorie, par qui, évolution)
+│       │   ├── Budgets.php          # Budgets mensuels par catégorie + dépassements
+│       │   └── Accounts.php         # Comptes, valeur nette, allocation, instantanés patrimoine
+│       ├── domotique/        # (à venir — monitoring du cluster RPi)
+│       └── pro/              # (à venir)
 │
 └── frontend/                 # Interface client (Vanilla)
     ├── index.html            # Coquille : Sidebar + zone <main>
-    ├── assets/css/style.css  # Thème dark "monitoring" + grille Bento responsive
+    ├── assets/
+    │   ├── css/style.css      # Thème dark "monitoring" + grille Bento responsive
+    │   └── vendor/
+    │       └── chart.umd.min.js  # Chart.js vendu en local (graphiques Finances, hors-ligne)
     ├── components/
     │   └── bento-card.js      # Web Component <bento-card> (Shadow DOM, slot "actions")
     └── js/
@@ -139,8 +152,12 @@ docker compose exec -T db sh -c 'exec mariadb -uos_user -pospassword os_perso' <
 docker compose down -v && docker compose up -d
 ```
 
-**Tables actuelles :** `shopping_items` (avec `rayon`), `inventory_pantry`, `meals_history`,
-`weekly_plan` (avec `cooked` + `recipe`), `meal_ingredients` (ingrédients par plat), `user_preferences`.
+**Tables actuelles :**
+- *Foyer* : `shopping_items` (avec `rayon`), `inventory_pantry`, `meals_history`,
+  `weekly_plan` (avec `cooked` + `recipe`), `meal_ingredients` (ingrédients par plat), `user_preferences`.
+- *Finances* : `finance_transactions` (dépenses/revenus + `qui`), `finance_budgets` (plafond
+  mensuel par catégorie), `finance_accounts` (comptes/patrimoine), `finance_networth_snapshots`
+  (instantanés mensuels de la valeur nette).
 
 ---
 
@@ -166,6 +183,14 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 | `GET` · `POST` | `/backend/foyer/preferences` | Préférences du foyer : lire / enregistrer |
 | `GET` | `/backend/calendrier/events` | Agenda fusionné (`?days=N` ou `?from=&to=`) |
 | `GET` | `/backend/calendrier/feeds` | Calendriers configurés (nom + couleur) |
+| `GET` · `POST` | `/backend/finances/transactions` | Dépenses/revenus : lister (filtres `month`, `qui`…) / ajouter |
+| `PUT` · `DELETE` | `/backend/finances/transactions/{id}` | Modifier / supprimer une transaction |
+| `GET` | `/backend/finances/summary` | Agrégats du mois (solde, par catégorie, par qui, évolution) |
+| `GET` · `POST` | `/backend/finances/budgets` | Budgets + réalisé du mois / définir (≤ 0 supprime) |
+| `GET` · `POST` | `/backend/finances/comptes` | Comptes + valeur nette & allocation / ajouter |
+| `PUT` · `DELETE` | `/backend/finances/comptes/{id}` | Modifier / supprimer un compte |
+| `GET` · `POST` | `/backend/finances/snapshots` | Historique de la valeur nette / enregistrer l'instantané du mois |
+| `GET` | `/backend/finances/categories` | Listes prédéfinies (catégories, types, qui, types de compte) |
 
 **Ajouter un module** : créer `backend/modules/<nom>/router.php`, puis ajouter un
 `case '<nom>'` dans le `switch` de `backend/index.php`. Le `core` ne bouge pas.
@@ -179,7 +204,12 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 - Navigation **SPA sans rechargement** (hash routing) gérée par `js/app.js`.
 - Composant réutilisable `<bento-card title="..." icon="..." span="...">`.
 - **Interactions par délégation d'événements** (un listener par conteneur, survit aux ré-rendus).
-- Modales natives `<dialog>` : préférences du menu, **recette d'un plat**, **calendrier** (semaine/mois).
+- Modales natives `<dialog>` : préférences du menu, **recette d'un plat**, **calendrier** (semaine/mois),
+  ajout de repas, gestion des budgets, ajout/édition de compte.
+- **Graphiques** via **Chart.js** (vendu en local, chargé en lazy uniquement sur la vue Finances) :
+  donut des dépenses, donut d'allocation du patrimoine, courbe d'évolution de la valeur nette.
+- **Dashboard** = résumé des modules : cartes **Foyer aujourd'hui** (repas/agenda/courses) et
+  **Finances** (solde du mois, valeur nette, alerte budgets), + état du système.
 - Couche réseau isolée dans `js/api.js` (jamais de `fetch` ailleurs).
 
 ---
@@ -190,9 +220,9 @@ renvoient un JSON normalisé : `{ "status": "success" | "error", ... }`.
 |---|---|---|
 | **Foyer** | 🟢 Fonctionnel | Menu IA (avec ingrédients par plat) ; **recettes détaillées** générées à la demande ; liste de courses **triée par rayon** (+ export texte) ; placards ; boucle complète *acheté → placard* et *cuisiné → décrément du stock + historique* ; préférences |
 | **Calendrier** | 🟢 Fonctionnel | Agenda commun en **lecture seule** depuis les calendriers **Apple/iCal** publiés (parseur natif, cache) ; vues **jour / semaine / mois**, fusion multi-calendriers |
-| **Domotique** | ⚪ Prévu | Home Assistant, capteurs Zigbee, monitoring RPi |
+| **Finances** | 🟢 Fonctionnel | Dépenses/revenus (catégories, champ « qui » pour le couple) ; **graphiques** (donut par catégorie) ; **budgets** mensuels par catégorie + alertes de dépassement ; **patrimoine** (comptes, valeur nette, allocation) ; **courbe d'évolution** de la valeur nette (instantanés mensuels) |
+| **Domotique** | ⚪ Prévu | Home Assistant, capteurs Zigbee, **monitoring du cluster de 4 Raspberry Pi 4** (CPU/température/RAM/disque, nœuds up/down) |
 | **Pro & Freelance** | ⚪ Prévu | Facturation, suivi du CA, rappels Urssaf/CFE |
-| **Finances** | ⚪ Prévu | Suivi des dépenses, tracker d'investissements |
 
 ---
 
