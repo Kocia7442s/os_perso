@@ -792,3 +792,143 @@ body {
   .cal-mc-num { font-size: 0.7rem; }
   .cal-mc-ev { font-size: 0.62rem; padding: 1px 3px; }
 }
+
+/* =========================================================
+   MODULE FINANCES — dépenses & revenus
+   ========================================================= */
+
+/* Formulaire de saisie rapide. */
+.fin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 14px;
+}
+.fin-form .field { margin-bottom: 0; gap: 6px; }
+.fin-form .field > span { font-size: 0.8rem; }
+.fin-form .field > span em { font-style: normal; opacity: 0.65; }
+
+/* Montant = champ vedette (pleine largeur, plus grand). */
+.fin-form .fin-amount { grid-column: 1 / -1; }
+.fin-form .fin-amount input { font-size: 1.35rem; font-weight: 700; padding: 12px 14px; }
+/* Libellé sur toute la largeur. */
+.fin-form .fin-wide { grid-column: 1 / -1; }
+
+/* Contrôles : ce formulaire n'est PAS dans une modale, on les style ici. */
+.fin-form input,
+.fin-form select {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 9px;
+  color: var(--text);
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 0.9rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.fin-form input::placeholder { color: var(--text-muted); opacity: 0.55; }
+.fin-form input:focus,
+.fin-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* Selects : flèche custom (rendu homogène cross-navigateur sur fond sombre). */
+.fin-form select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 32px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath fill='none' stroke='%238b93a7' stroke-width='1.6' d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+}
+/* Icône du sélecteur de date lisible sur fond sombre. */
+.fin-form input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(0.7);
+  cursor: pointer;
+}
+
+/* Bouton de validation : pleine largeur, bien présent. */
+.fin-add-btn { width: 100%; margin-top: 16px; padding: 12px; font-size: 0.95rem; }
+
+/* Sur écran étroit : une seule colonne. */
+@media (max-width: 440px) {
+  .fin-form-grid { grid-template-columns: 1fr; }
+}
+
+/* Carte "Ce mois-ci". */
+.fin-monthnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.fin-month-label { font-weight: 600; text-transform: capitalize; }
+.fin-monthnav .btn-ghost { padding: 4px 12px; }
+.fin-solde-lbl { margin: 6px 0 0; color: var(--text-muted); font-size: 0.78rem; }
+.fin-solde { font-size: 2rem; font-weight: 700; line-height: 1.1; margin: 2px 0 12px; }
+.fin-solde.pos { color: var(--ok); }
+.fin-solde.neg { color: var(--danger); }
+.fin-totaux { display: flex; gap: 10px; }
+.fin-totaux span {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 9px;
+  padding: 8px 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+.fin-totaux strong { font-size: 1rem; color: var(--text); }
+.fin-dep strong { color: var(--danger); }
+.fin-rev strong { color: var(--ok); }
+.fin-sub { margin: 16px 0 8px; font-size: 0.82rem; color: var(--text-muted); font-weight: 600; }
+.fin-qui { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+.fin-qui li {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.86rem;
+  padding: 5px 10px;
+  background: var(--bg);
+  border-radius: 7px;
+}
+.fin-qui span { color: var(--text-muted); }
+
+/* Carte "Répartition" — conteneur à hauteur fixe pour le canvas Chart.js. */
+.fin-chart-wrap { position: relative; height: 280px; }
+
+/* Carte "Transactions" — liste. */
+.fin-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.fin-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--card-border);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.fin-date { color: var(--text-muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.fin-lib { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fin-tags { font-size: 0.72rem; color: var(--text-muted); }
+.fin-amt { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.fin-amt.depense { color: var(--danger); }
+.fin-amt.revenu  { color: var(--ok); }
+.fin-del {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1;
+  padding: 4px 6px;
+  border-radius: 7px;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: color 0.15s, background 0.15s, opacity 0.15s;
+}
+.fin-del:hover { color: var(--danger); background: var(--surface); opacity: 1; }
+.fin-del:disabled { opacity: 0.4; cursor: progress; }

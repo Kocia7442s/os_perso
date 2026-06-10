@@ -12,7 +12,9 @@ import { getSystemStatus, generateWeeklyMenu, getCurrentMenu, cookMeal, addMeal,
          getShoppingList, addShoppingItem, setShoppingItemStatus, deleteShoppingItem, stockBoughtItem,
          getPantry, addPantryItem, updatePantryItem, deletePantryItem,
          getPreferences, savePreferences,
-         getCalendarEvents, getCalendarRange } from './api.js';   // couche réseau
+         getCalendarEvents, getCalendarRange,
+         getTransactions, addTransaction, updateTransaction, deleteTransaction,
+         getFinanceSummary, getFinanceCategories } from './api.js';   // couche réseau
 
 const main     = document.getElementById('main');
 const navItems = document.querySelectorAll('.nav-item');
@@ -71,8 +73,14 @@ const VIEWS = {
   finances: {
     title: 'Finances',
     cards: [
-      { title: 'Dépenses',        icon: '💶', body: '<p class="muted">À venir.</p>' },
-      { title: 'Investissements', icon: '📊', body: '<p class="muted">À venir.</p>' },
+      { title: 'Saisie rapide', icon: '➕', id: 'card-fin-add',
+        body: '<div id="fin-add"><p class="muted">Chargement…</p></div>' },
+      { title: 'Ce mois-ci', icon: '💶', id: 'card-fin-month',
+        body: '<div id="fin-month"><p class="muted">Chargement…</p></div>' },
+      { title: 'Répartition', icon: '🍩', id: 'card-fin-cats',
+        body: '<div id="fin-cats"><p class="muted">Chargement…</p></div>' },
+      { title: 'Transactions', icon: '📋', span: 2, id: 'card-fin-list',
+        body: '<div id="fin-list"><p class="muted">Chargement…</p></div>' },
     ],
   },
 };
@@ -108,6 +116,7 @@ function renderView(name) {
   // Hook post-rendu : câbler / remplir les cartes interactives ou "live"
   if (name === 'dashboard') { loadSystemStatus(); loadTodaySummary(); initTodayInteractions(); }
   if (name === 'foyer')     initFoyerView();
+  if (name === 'finances')  initFinancesView();
 }
 
 // ---------------------------------------------------------------------------
@@ -1540,6 +1549,324 @@ function openMealDialog(prefill = {}) {
   document.getElementById('meal-error').hidden = true;
   dialog.showModal();
   form.nom.focus();
+}
+
+// ===========================================================================
+//  Module FINANCES — dépenses & revenus (saisie manuelle, graphiques Chart.js)
+// ===========================================================================
+
+const financeState = {
+  month: null, // "AAAA-MM" affiché
+  meta:  null, // { categories:{depense:[],revenu:[]}, types:[], qui:[] } (cache)
+  chart: null, // instance Chart.js du donut (à détruire avant re-render)
+};
+
+const QUI_LABELS = { moi: 'Moi', partenaire: 'Partenaire', commun: 'Commun' };
+
+// Palette du donut (lisible sur fond sombre).
+const FIN_COLORS = ['#6c8cff', '#51d88a', '#f3a23e', '#f3667e', '#9d7bff',
+                    '#3ec9d6', '#e6cf5a', '#ef8bbd', '#7a8aa0'];
+
+const eurFmt = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' });
+const fmtEUR = (n) => eurFmt.format(Number(n) || 0);
+
+/** "AAAA-MM" du mois courant (heure locale). */
+function currentMonthKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+/** "2026-06" → "juin 2026". */
+function monthLabel(key) {
+  const [y, m] = key.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+}
+
+/** Décale un mois "AAAA-MM" de ±n mois. */
+function shiftMonth(key, n) {
+  const [y, m] = key.split('-').map(Number);
+  const d = new Date(y, m - 1 + n, 1);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+}
+
+/** Charge (une seule fois) Chart.js vendu en local. Résout vers window.Chart. */
+let chartJsPromise = null;
+function ensureChartJs() {
+  if (window.Chart) return Promise.resolve(window.Chart);
+  if (chartJsPromise) return chartJsPromise;
+  chartJsPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'assets/vendor/chart.umd.min.js';
+    s.onload  = () => resolve(window.Chart);
+    s.onerror = () => reject(new Error('Chart.js introuvable (assets/vendor/chart.umd.min.js)'));
+    document.head.appendChild(s);
+  });
+  return chartJsPromise;
+}
+
+/** Point d'entrée de la vue Finances : charge les métadonnées puis rend les cartes. */
+async function initFinancesView() {
+  financeState.month = financeState.month || currentMonthKey();
+
+  if (!financeState.meta) {
+    try {
+      const { data } = await getFinanceCategories();
+      financeState.meta = data;
+    } catch (_) {
+      financeState.meta = {
+        categories: { depense: ['Autre'], revenu: ['Autre'] },
+        types: ['depense', 'revenu'],
+        qui: ['moi', 'partenaire', 'commun'],
+      };
+    }
+  }
+
+  renderFinanceAddForm();
+  initFinanceInteractions();
+  loadFinanceMonth(); // summary → carte "Ce mois-ci" + donut
+  loadFinanceList();  // transactions du mois
+}
+
+/** Construit le formulaire de saisie rapide (dépend des catégories chargées). */
+function renderFinanceAddForm() {
+  const host = document.getElementById('fin-add');
+  if (!host || !financeState.meta) return;
+
+  const meta    = financeState.meta;
+  const today   = ymd(startOfDay(new Date()));
+  const catOpts = (type) => (meta.categories[type] || [])
+    .map(c => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
+  const quiOpts = (meta.qui || []).map(q =>
+    `<option value="${escapeAttr(q)}"${q === 'commun' ? ' selected' : ''}>${escapeHtml(QUI_LABELS[q] || q)}</option>`).join('');
+
+  host.innerHTML = `
+    <form id="fin-add-form" class="fin-form">
+      <div class="fin-form-grid">
+        <label class="field fin-amount"><span>Montant (€)</span>
+          <input type="text" name="montant" inputmode="decimal" placeholder="0,00"
+                 autocomplete="off" required>
+        </label>
+        <label class="field"><span>Type</span>
+          <select name="type">
+            <option value="depense" selected>Dépense</option>
+            <option value="revenu">Revenu</option>
+          </select>
+        </label>
+        <label class="field"><span>Date</span>
+          <input type="date" name="date" value="${today}" required>
+        </label>
+        <label class="field"><span>Qui</span>
+          <select name="qui">${quiOpts}</select>
+        </label>
+        <label class="field"><span>Catégorie</span>
+          <select name="categorie">${catOpts('depense')}</select>
+        </label>
+        <label class="field fin-wide"><span>Libellé <em>(optionnel)</em></span>
+          <input type="text" name="libelle" maxlength="200" placeholder="ex : Carrefour"
+                 autocomplete="off">
+        </label>
+      </div>
+      <p class="dialog-error" id="fin-add-error" hidden></p>
+      <button type="submit" class="btn-primary fin-add-btn" id="fin-add-btn">Ajouter la transaction</button>
+    </form>`;
+}
+
+/** Recharge les options de catégorie selon le type sélectionné (dépense/revenu). */
+function refreshCategoryOptions(type) {
+  const sel = document.querySelector('#fin-add-form select[name="categorie"]');
+  if (!sel || !financeState.meta) return;
+  const cats = financeState.meta.categories[type] || [];
+  sel.innerHTML = cats.map(c => `<option value="${escapeAttr(c)}">${escapeHtml(c)}</option>`).join('');
+}
+
+/** Câble les interactions des cartes Finances (délégation par conteneur stable). */
+function initFinanceInteractions() {
+  const addHost = document.getElementById('fin-add');
+  if (addHost) {
+    addHost.addEventListener('submit', handleFinanceAdd);
+    addHost.addEventListener('change', (e) => {
+      const typeSel = e.target.closest('select[name="type"]');
+      if (typeSel) refreshCategoryOptions(typeSel.value);
+    });
+  }
+
+  const monthHost = document.getElementById('fin-month');
+  if (monthHost) {
+    monthHost.addEventListener('click', (e) => {
+      const prev = e.target.closest('.fin-prev');
+      const next = e.target.closest('.fin-next');
+      if (!prev && !next) return;
+      financeState.month = shiftMonth(financeState.month, prev ? -1 : 1);
+      loadFinanceMonth();
+      loadFinanceList();
+    });
+  }
+
+  const listHost = document.getElementById('fin-list');
+  if (listHost) {
+    listHost.addEventListener('click', async (e) => {
+      const del = e.target.closest('.fin-del');
+      if (!del) return;
+      del.disabled = true;
+      try {
+        await deleteTransaction(Number(del.dataset.id));
+        loadFinanceMonth();
+        loadFinanceList();
+      } catch (err) {
+        console.error('Suppression transaction échouée :', err.message);
+        del.disabled = false;
+      }
+    });
+  }
+}
+
+/** Soumission du formulaire de saisie. */
+async function handleFinanceAdd(e) {
+  e.preventDefault();
+  const form = e.target.closest('#fin-add-form');
+  if (!form) return;
+  const btn   = form.querySelector('#fin-add-btn');
+  const errEl = form.querySelector('#fin-add-error');
+  const els   = form.elements;
+
+  errEl.hidden = true;
+  btn.disabled = true;
+  btn.textContent = 'Ajout…';
+  try {
+    await addTransaction({
+      type:      els.type.value,
+      montant:   els.montant.value,
+      date:      els.date.value,
+      categorie: els.categorie.value,
+      qui:       els.qui.value,
+      libelle:   els.libelle.value.trim(),
+    });
+    // On bascule sur le mois de la saisie pour que l'ajout soit visible.
+    financeState.month = els.date.value.slice(0, 7);
+    // Saisie en série : on vide montant + libellé, on garde type/date/qui.
+    els.montant.value = '';
+    els.libelle.value = '';
+    loadFinanceMonth();
+    loadFinanceList();
+    els.montant.focus();
+  } catch (err) {
+    errEl.textContent = `Échec : ${err.message}`;
+    errEl.hidden = false;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Ajouter';
+  }
+}
+
+/** Charge le résumé du mois → carte "Ce mois-ci" + donut de répartition. */
+async function loadFinanceMonth() {
+  const host = document.getElementById('fin-month');
+  if (!host) return;
+  try {
+    const { data } = await getFinanceSummary(financeState.month);
+    host.innerHTML = renderFinanceMonth(data);
+    renderFinanceChart(data); // alimente la carte "Répartition"
+  } catch (err) {
+    host.innerHTML = `<p class="error">Indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Carte "Ce mois-ci" : navigation + solde + totaux + dépenses par personne. */
+function renderFinanceMonth(data) {
+  const t = data.totaux;
+  const soldeCls = t.solde >= 0 ? 'pos' : 'neg';
+  const qui = (data.par_qui || []).filter(q => q.depenses > 0 || q.revenus > 0);
+  const quiHtml = qui.length
+    ? `<h4 class="fin-sub">Dépenses par personne</h4><ul class="fin-qui">`
+      + qui.map(q => `<li><span>${escapeHtml(QUI_LABELS[q.qui] || q.qui)}</span>`
+        + `<strong>${fmtEUR(q.depenses)}</strong></li>`).join('')
+      + `</ul>`
+    : '';
+
+  return `
+    <div class="fin-monthnav">
+      <button type="button" class="btn-ghost fin-prev" aria-label="Mois précédent">‹</button>
+      <span class="fin-month-label">${escapeHtml(monthLabel(data.month))}</span>
+      <button type="button" class="btn-ghost fin-next" aria-label="Mois suivant">›</button>
+    </div>
+    <p class="fin-solde-lbl">Solde du mois</p>
+    <div class="fin-solde ${soldeCls}">${fmtEUR(t.solde)}</div>
+    <div class="fin-totaux">
+      <span class="fin-dep">Dépenses<br><strong>${fmtEUR(t.depenses)}</strong></span>
+      <span class="fin-rev">Revenus<br><strong>${fmtEUR(t.revenus)}</strong></span>
+    </div>
+    ${quiHtml}`;
+}
+
+/** Donut Chart.js des dépenses par catégorie dans la carte "Répartition". */
+async function renderFinanceChart(summary) {
+  const host = document.getElementById('fin-cats');
+  if (!host) return;
+
+  if (financeState.chart) { financeState.chart.destroy(); financeState.chart = null; }
+
+  const cats = summary.par_categorie || [];
+  if (!cats.length) {
+    host.innerHTML = '<p class="muted">Aucune dépense ce mois-ci.</p>';
+    return;
+  }
+
+  host.innerHTML = '<div class="fin-chart-wrap"><canvas id="fin-donut"></canvas></div>';
+  try {
+    const Chart  = await ensureChartJs();
+    const canvas = document.getElementById('fin-donut');
+    if (!canvas) return; // l'utilisateur a pu changer de vue entre-temps
+    financeState.chart = new Chart(canvas, {
+      type: 'doughnut',
+      data: {
+        labels: cats.map(c => c.categorie),
+        datasets: [{ data: cats.map(c => c.montant), backgroundColor: FIN_COLORS, borderWidth: 0 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+          legend: { position: 'bottom', labels: { color: '#e4e7ef', boxWidth: 12, padding: 10 } },
+          tooltip: { callbacks: { label: (ctx) => `${ctx.label} : ${fmtEUR(ctx.parsed)}` } },
+        },
+      },
+    });
+  } catch (err) {
+    host.innerHTML = `<p class="error">Graphique indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Charge et affiche la liste des transactions du mois. */
+async function loadFinanceList() {
+  const host = document.getElementById('fin-list');
+  if (!host) return;
+  try {
+    const { data } = await getTransactions({ month: financeState.month });
+    host.innerHTML = renderFinanceList(data ?? []);
+  } catch (err) {
+    host.innerHTML = `<p class="error">Liste indisponible : ${escapeHtml(err.message)}</p>`;
+  }
+}
+
+/** Liste interactive (suppression par ✕). */
+function renderFinanceList(items) {
+  if (!items.length) return '<p class="muted">Aucune transaction ce mois-ci.</p>';
+  const rows = items.map(t => {
+    const sign = t.type === 'revenu' ? '+' : '−';
+    const cls  = t.type === 'revenu' ? 'revenu' : 'depense';
+    const d    = parseYmd(t.date).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' });
+    const lib  = t.libelle ? escapeHtml(t.libelle) : escapeHtml(t.categorie);
+    return `<li class="fin-row">`
+      + `<span class="fin-date">${d}</span>`
+      + `<span class="fin-lib">${lib}`
+      + `<span class="fin-tags">${escapeHtml(t.categorie)} · ${escapeHtml(QUI_LABELS[t.qui] || t.qui)}</span></span>`
+      + `<span class="fin-amt ${cls}">${sign} ${fmtEUR(t.montant)}</span>`
+      + `<button type="button" class="fin-del" data-id="${t.id}" `
+      + `title="Supprimer" aria-label="Supprimer">✕</button>`
+      + `</li>`;
+  }).join('');
+  return `<ul class="fin-list">${rows}</ul>`;
 }
 
 // ---------------------------------------------------------------------------

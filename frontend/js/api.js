@@ -254,3 +254,49 @@ export async function savePreferences(prefs) {
 
   return response.json();
 }
+
+/* ----- Module FINANCES (dépenses & revenus, saisie manuelle) ----- */
+
+/**
+ * Liste des transactions, filtrable (GET /finances/transactions).
+ * @param {Object} [filters] { month:"AAAA-MM", type, qui, categorie } — champs optionnels.
+ * @returns {Promise<Object>} { status, count, data: [ { id, date, type, montant,
+ *          categorie, qui, libelle, note }, ... ] }
+ */
+export function getTransactions(filters = {}) {
+  const qs = new URLSearchParams(
+    Object.entries(filters).filter(([, v]) => v != null && v !== '')
+  ).toString();
+  return apiGet(`/finances/transactions${qs ? `?${qs}` : ''}`);
+}
+
+/** Ajoute une transaction (POST /finances/transactions). */
+export function addTransaction(tx) {
+  return apiSend('POST', '/finances/transactions', tx);
+}
+
+/** Met à jour une transaction (PUT /finances/transactions/{id}). */
+export function updateTransaction(id, fields) {
+  return apiSend('PUT', `/finances/transactions/${id}`, fields);
+}
+
+/** Supprime une transaction (DELETE /finances/transactions/{id}). */
+export function deleteTransaction(id) {
+  return apiSend('DELETE', `/finances/transactions/${id}`);
+}
+
+/**
+ * Agrégats d'un mois (GET /finances/summary).
+ * @param {string} month "AAAA-MM".
+ * @returns {Promise<Object>} { status, data: { month, totaux:{depenses,revenus,solde},
+ *          par_categorie:[{categorie,montant}], par_qui:[{qui,depenses,revenus}],
+ *          evolution:[{mois,depenses,revenus}] } }
+ */
+export function getFinanceSummary(month) {
+  return apiGet(`/finances/summary?month=${encodeURIComponent(month)}`);
+}
+
+/** Listes prédéfinies (catégories par type, types, qui) — GET /finances/categories. */
+export function getFinanceCategories() {
+  return apiGet('/finances/categories');
+}
